@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import os
+
 import discord
 import yt_dlp
 from discord.ext import commands
+from discord.ext.commands import CommandNotFound
 from dotenv import load_dotenv
 
 logging.basicConfig(level=logging.INFO)
@@ -17,17 +19,38 @@ TOKEN = os.getenv('DISCORD_TOKEN')
 
 music_queue = {}
 currently_playing = {}
+MAX_DURATION = 7200
 
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
     'quiet': True,
     'default_search': 'ytsearch',
     'noplaylist': True,
+    'extract_audio': True
 }
 FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
     'options': '-vn -bufsize 512k'
 }
+
+
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, CommandNotFound):
+        await ctx.send("❓ 명령어를 찾을 수 없습니다.")
+
+    elif isinstance(error, commands.CommandInvokeError):
+        original = error.original
+        if isinstance(original, VideoTooLongError):
+            await ctx.send(f"❌ 이 영상({original.duration//60}분)은 너무 깁니다. 2시간 미만인 영상만 재생할 수 있어요.")
+        else:
+            await ctx.send("⚠️ 오류가 발생했습니다.")
+            raise error
+
+    else:
+        await ctx.send("⚠️ 오류가 발생했습니다.")
+        raise error
+
 
 @bot.event
 async def on_ready():
@@ -36,27 +59,47 @@ async def on_ready():
     )
     logging.info(f"봇 준비 완료: {bot.user}")
 
+
+class VideoTooLongError(Exception):
+    def __init__(self, duration, max_duration):
+        super().__init__(f"영상 길이({duration}s)는 {max_duration}s(2시간)미만이어야 합니다.\n")
+        self.duration = duration
+        self.max_duration = max_duration
+
+
 def get_stream_url_by_query(query):
     with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
         info = ydl.extract_info(f"ytsearch1:{query}", download=False)
         if 'entries' in info:
             info = info['entries'][0]
+
+        duration = info['duration']
+        if duration > MAX_DURATION:
+            raise VideoTooLongError(duration, MAX_DURATION)
+
         return {
             'source': info['url'],
             'title': info['title'],
             'webpage_url': info['webpage_url']
         }
 
+
 def get_stream_url_by_yt_url(youtube_url):
     with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
         info = ydl.extract_info(youtube_url, download=False)
         if 'entries' in info:
             info = info['entries'][0]
+
+        duration = info['duration']
+        if duration > MAX_DURATION:
+            raise VideoTooLongError(duration, MAX_DURATION)
+
         return {
             'source': info['url'],
             'title': info['title'],
             'webpage_url': info['webpage_url']
         }
+
 
 async def play_music(ctx, refresh):
     if len(music_queue) == 0:
@@ -67,8 +110,6 @@ async def play_music(ctx, refresh):
     if not voice_client or not voice_client.is_connected():
         channel = ctx.author.voice.channel
         voice_client = await channel.connect()
-    else:
-        await ctx.send("❌ 음성 채널에서 호출해주세요.")
 
     song = music_queue[ctx.guild.id].pop(0)
     if not refresh:
@@ -110,8 +151,17 @@ async def play_music(ctx, refresh):
     voice_client.play(source, after=after_playing)
     await ctx.send(f"🎶 재생중: **{song['title']}**")
 
+
 @bot.command()
-async def play(ctx, *, arg):
+async def play(ctx, *, arg=None):
+    if not ctx.author.voice or not ctx.author.voice.channel:
+        await ctx.send("⛔ 음성 채널에서 호출해주세요.")
+        return
+
+    if arg is None:
+        await play_music(ctx, True)
+        return
+
     args = arg.split()
 
     is_add = False
@@ -143,7 +193,7 @@ async def play(ctx, *, arg):
             return
         else:
             await ctx.send(f"▶️ 즉시 재생합니다.")
-            await play_music(ctx, is_add)
+            await play_music(ctx, True)
             return
 
     if voice_client and voice_client.is_playing():
@@ -154,14 +204,16 @@ async def play(ctx, *, arg):
 
     music_queue.setdefault(ctx.guild.id, []).insert(0, song)
     await ctx.send(f"▶️ 즉시 재생합니다.")
-    await play_music(ctx, is_add)
+    await play_music(ctx, False)
+
 
 @bot.command()
 async def skip(ctx):
     voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
     if voice_client and voice_client.is_playing():
-        voice_client.stop()
         await ctx.send("⏭️ 다음 곡을 재생합니다.")
+        voice_client.stop()
+
 
 @bot.command()
 async def stop(ctx):
@@ -173,6 +225,7 @@ async def stop(ctx):
         await voice_client.disconnect()
         await ctx.send("🛑 노래 재생을 중지합니다.")
 
+
 @bot.command()
 async def resume(ctx):
     voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
@@ -181,12 +234,13 @@ async def resume(ctx):
         await ctx.send("🎶 이미 노래를 재생 중입니다.")
         return
 
-    if len(music_queue) == 0:
+    if not music_queue.get(ctx.guild.id) or len(music_queue) == 0:
         await ctx.send("❌ 빈 대기열입니다.")
         return
 
     await ctx.send("✅ 다시 재생합니다.")
     await play_music(ctx, True)
+
 
 @bot.command()
 async def queue(ctx):
@@ -205,11 +259,13 @@ async def queue(ctx):
 
     await ctx.send(queue_message)
 
+
 @bot.command()
 async def clear(ctx):
     queue_list = music_queue.get(ctx.guild.id, [])
     queue_list.clear()
     await ctx.send("▶️ 대기열 목록 초기화")
+
 
 @bot.command(name="help")
 async def custom_help(ctx):
@@ -221,5 +277,6 @@ async def custom_help(ctx):
                    "🟢 **!resume** : 대기열 리스트를 기준으로 노래를 다시 재생합니다.\n\n" +
                    "🟣 **!queue** : 대기열 리스트를 확인합니다.\n\n" +
                    "🟣 **!clear** : 대기열 리스트를 초기화합니다.(리스트의 노래를 모두 삭제합니다.)\n\n")
+
 
 bot.run(TOKEN)
