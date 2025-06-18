@@ -6,4 +6,4 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-CMD ["python", "discord_music_bot.py"]
+CMD ["python", "main.py"]
