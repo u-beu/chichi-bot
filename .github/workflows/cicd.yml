@@ -1,0 +1,35 @@
+name: Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "배포 옵션 선택"
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+          - test
+          - init
+          - prod
+          - config
+
+jobs:
+  test:
+    if: ${{ github.event.inputs.env == 'test' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          
+      - name: Set pytest
+        run: pip install pytest-asyncio
+
+      - name: Run unit tests
+        run: pytest tests/
