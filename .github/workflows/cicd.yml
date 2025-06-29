@@ -67,3 +67,39 @@ jobs:
           --push \
           -t ${{ secrets.DOCKERHUB_USERNAME }}/chichi-bot:latest \
           .
+
+  deploy-init:
+    needs: build
+    if: ${{ github.event.inputs.env == 'init' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Create .env file
+        run: |
+          echo "DB_NAME=${{ secrets.DISCORD_TOKEN }}" >> .env
+
+      - name: Save EC2 private key
+        run: |
+          echo "${{ secrets.EC2_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+
+      - name: Copy files to EC2
+        run: |
+          scp -i private_key.pem -o StrictHostKeyChecking=no -r \
+              ./.env \
+              ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            mkdir -p /home/ubuntu/chichi-bot
+            mv ./.env /home/ubuntu/chichi-bot/
+            cd /home/ubuntu/chichi-bot
+            sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/chichi-bot:latest
