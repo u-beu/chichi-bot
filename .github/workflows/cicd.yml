@@ -120,6 +120,8 @@ jobs:
             mv .env /home/ubuntu/chichi-bot/
             mv cookies.txt /home/ubuntu/chichi-bot/
             cd /home/ubuntu/chichi-bot
+            sudo docker stop chichi-bot
+            sudo docker rm chichi-bot
             sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/chichi-bot:latest
             sudo docker run -d --name chichi-bot \
               --env-file .env \
