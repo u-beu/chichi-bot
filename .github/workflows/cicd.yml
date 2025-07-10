@@ -125,5 +125,5 @@ jobs:
             sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/chichi-bot:latest
             sudo docker run -d --name chichi-bot \
               --env-file .env \
-              --mount type=bind, source="cookies.txt", target=/app/cookies.txt \
+              --mount type=bind,source=cookies.txt,target=/app/cookies.txt \
               ${{ secrets.DOCKERHUB_USERNAME }}/chichi-bot:latest
