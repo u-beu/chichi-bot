@@ -86,6 +86,10 @@ jobs:
         run: |
           echo "DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}" >> .env
 
+      - name: Create cookie file
+        run: |
+          echo "${{ secrets.COOKIE }}" >> cookies.txt
+
       - name: Save EC2 private key
         run: |
           echo "${{ secrets.EC2_KEY }}" > private_key.pem
@@ -94,7 +98,8 @@ jobs:
       - name: Copy files to EC2
         run: |
           scp -i private_key.pem -o StrictHostKeyChecking=no -r \
-              ./.env \
+              .env \
+              cookies.txt \
               ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/
 
       - name: Log in to DockerHub
@@ -112,7 +117,8 @@ jobs:
           script: |
             rm -rf /home/ubuntu/chichi-bot
             mkdir -p /home/ubuntu/chichi-bot
-            mv ./.env /home/ubuntu/chichi-bot/
+            mv .env /home/ubuntu/chichi-bot/
+            mv cookies.txt /home/ubuntu/chichi-bot/
             cd /home/ubuntu/chichi-bot
             sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/chichi-bot:latest
             sudo docker run -d --name chichi-bot \
