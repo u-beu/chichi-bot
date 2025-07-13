@@ -1,19 +1,30 @@
-# 음악 관련 유틸과 명령어 정의
 import yt_dlp
 import discord
 import asyncio
 import logging
 from discord.ext import commands
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+PROXY_IP = os.getenv("PROXY_IP")
+PROXY_USERNAME = os.getenv("PROXY_USERNAME")
+PROXY_PASSWORD = os.getenv("PROXY_PASSWORD")
+PROXY_HOST = os.getenv("PROXY_HOST")
+PROXY_PORT = os.getenv("PROXY_PORT")
 
 logging.basicConfig(level=logging.INFO)
 
 MAX_DURATION = 7200
+proxy_url=f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}"
+
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
     'quiet': True,
     'default_search': 'ytsearch',
     'noplaylist': True,
     'extract_audio': True,
+    'proxy': proxy_url,
     'cookiefile': '/app/cookies.txt',
     'http_headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
