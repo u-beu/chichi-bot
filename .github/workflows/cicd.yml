@@ -85,6 +85,10 @@ jobs:
       - name: Create .env file
         run: |
           echo "DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}" >> .env
+          echo "PROXY_USERNAME=${{ secrets.PROXY_USERNAME }}" >> .env
+          echo "PROXY_PASSWORD=${{ secrets.PROXY_PASSWORD }}" >> .env
+          echo "PROXY_HOST=${{ secrets.PROXY_HOST }}" >> .env
+          echo "PROXY_PORT=${{ secrets.PROXY_PORT }}" >> .env
 
       - name: Create cookie file
         run: |

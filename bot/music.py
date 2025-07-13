@@ -7,7 +7,6 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-PROXY_IP = os.getenv("PROXY_IP")
 PROXY_USERNAME = os.getenv("PROXY_USERNAME")
 PROXY_PASSWORD = os.getenv("PROXY_PASSWORD")
 PROXY_HOST = os.getenv("PROXY_HOST")
