@@ -90,9 +90,13 @@ jobs:
           echo "PROXY_HOST=${{ secrets.PROXY_HOST }}" >> .env
           echo "PROXY_PORT=${{ secrets.PROXY_PORT }}" >> .env
 
-      - name: Create cookie file
+      - name: Create cookies file
         run: |
-          echo "${{ secrets.COOKIE }}" >> cookies.txt
+          echo "${{ secrets.COOKIE }}" | base64 -d > cookies.txt
+
+      - name: Create proxy ca file
+        run: |
+          echo "${{ secrets.PROXY_CA }}" | base64 -d > proxy-ca.crt
 
       - name: Save EC2 private key
         run: |
@@ -104,6 +108,7 @@ jobs:
           scp -i private_key.pem -o StrictHostKeyChecking=no -r \
               .env \
               cookies.txt \
+              proxy-ca.crt \
               ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/
 
       - name: Log in to DockerHub
@@ -123,6 +128,7 @@ jobs:
             mkdir -p /home/ubuntu/chichi-bot
             mv .env /home/ubuntu/chichi-bot/
             mv cookies.txt /home/ubuntu/chichi-bot/
+            mv proxy-ca.crt /home/ubuntu/chichi-bot/
             cd /home/ubuntu/chichi-bot
             sudo docker stop chichi-bot
             sudo docker rm chichi-bot
@@ -130,4 +136,61 @@ jobs:
             sudo docker run -d --name chichi-bot \
               --env-file .env \
               -v /home/ubuntu/chichi-bot/cookies.txt:/app/cookies.txt \
+              -v /home/ubuntu/chichi-bot/proxy-ca.crt:/app/proxy-ca.crt \
+              ${{ secrets.DOCKERHUB_USERNAME }}/chichi-bot:latest
+            
+  deploy-config:
+    if: ${{ github.event.inputs.env == 'config' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Create .env file
+        run: |
+          echo "DISCORD_TOKEN=${{ secrets.DISCORD_TOKEN }}" >> .env
+          echo "PROXY_USERNAME=${{ secrets.PROXY_USERNAME }}" >> .env
+          echo "PROXY_PASSWORD=${{ secrets.PROXY_PASSWORD }}" >> .env
+          echo "PROXY_HOST=${{ secrets.PROXY_HOST }}" >> .env
+          echo "PROXY_PORT=${{ secrets.PROXY_PORT }}" >> .env
+
+      - name: Create cookies file
+        run: |
+          echo "${{ secrets.COOKIE }}" | base64 -d > cookies.txt
+
+      - name: Create proxy ca file
+        run: |
+          echo "${{ secrets.PROXY_CA }}" | base64 -d > proxy-ca.crt
+
+      - name: Save EC2 private key
+        run: |
+          echo "${{ secrets.EC2_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+
+      - name: Copy files to EC2
+        run: |
+          scp -i private_key.pem -o StrictHostKeyChecking=no -r \
+              .env \
+              cookies.txt \
+              proxy-ca.crt \
+              ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/
+          
+      - name: restart container
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            rm -rf /home/ubuntu/chichi-bot
+            mkdir -p /home/ubuntu/chichi-bot
+            mv -f .env /home/ubuntu/chichi-bot/
+            mv -f cookies.txt /home/ubuntu/chichi-bot/
+            mv -f proxy-ca.crt /home/ubuntu/chichi-bot/
+            cd /home/ubuntu/chichi-bot
+            sudo docker stop chichi-bot
+            sudo docker rm chichi-bot
+            sudo docker pull ${{ secrets.DOCKERHUB_USERNAME }}/chichi-bot:latest
+            sudo docker run -d --name chichi-bot \
+              --env-file .env \
+              -v /home/ubuntu/chichi-bot/cookies.txt:/app/cookies.txt \
+              -v /home/ubuntu/chichi-bot/proxy-ca.crt:/app/proxy-ca.crt \
               ${{ secrets.DOCKERHUB_USERNAME }}/chichi-bot:latest

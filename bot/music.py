@@ -26,6 +26,7 @@ YDL_OPTIONS = {
     'extract_audio': True,
     'proxy': proxy_url,
     'cookiefile': '/app/cookies.txt',
+    'cacerts': '/app/proxy-ca.crt',
     'http_headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
     }
