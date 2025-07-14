@@ -16,6 +16,7 @@ logging.basicConfig(level=logging.INFO)
 
 MAX_DURATION = 7200
 proxy_url=f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}"
+logging.info(f"proxy url:{proxy_url}")
 
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
