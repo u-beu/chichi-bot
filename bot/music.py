@@ -149,21 +149,16 @@ def register_music_commands(bot: commands.Bot):
 
         voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
 
-        if is_add:
-            music_queue.setdefault(ctx.guild.id, []).append(song)
-            await ctx.send(f"✅ 대기열 추가: **{song['title']}**")
-            if voice_client and voice_client.is_playing():
+        if voice_client and voice_client.is_playing():
+            if is_add:
+                music_queue.setdefault(ctx.guild.id, []).append(song)
+                await ctx.send(f"✅ 대기열 추가: **{song['title']}**")
                 return
             else:
-                await ctx.send(f"▶️ 즉시 재생합니다.")
-                await play_music(ctx, True)
+                music_queue.setdefault(ctx.guild.id, []).insert(0, song)
+                voice_client.stop()
+                await ctx.send(f"▶️ 현재 곡을 중단하고 즉시 재생합니다.")
                 return
-
-        if voice_client and voice_client.is_playing():
-            current_song = currently_playing.get(ctx.guild.id)
-            if current_song:
-                music_queue.setdefault(ctx.guild.id, []).insert(0, current_song)
-            voice_client.stop()
 
         music_queue.setdefault(ctx.guild.id, []).insert(0, song)
         await ctx.send(f"▶️ 즉시 재생합니다.")
