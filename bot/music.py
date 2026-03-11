@@ -1,8 +1,8 @@
 # 음악 관련 유틸과 명령어 정의
-import yt_dlp
-import discord
 import asyncio
 import logging
+import discord
+import yt_dlp
 from discord.ext import commands
 
 logging.basicConfig(level=logging.INFO)
@@ -23,11 +23,13 @@ FFMPEG_OPTIONS = {
 music_queue = {}
 currently_playing = {}
 
+
 class VideoTooLongError(Exception):
     def __init__(self, duration, max_duration):
         super().__init__(f"영상 길이({duration}s)는 {max_duration}s(2시간) 미만이어야 합니다.")
         self.duration = duration
         self.max_duration = max_duration
+
 
 def get_stream_url_by_query(query):
     with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
@@ -63,8 +65,17 @@ def get_stream_url_by_yt_url(youtube_url):
         }
 
 
+async def get_info_async(ctx, query, is_url=False):
+    loop = ctx.bot.loop
+    if is_url:
+        return await loop.run_in_executor(None, lambda: get_stream_url_by_yt_url(query))
+    else:
+        return await loop.run_in_executor(None, lambda: get_stream_url_by_query(query))
+
+
 async def play_music(ctx, refresh):
-    if len(music_queue) == 0:
+    music_queue_list = music_queue.get(ctx.guild.id, [])
+    if not music_queue_list:
         await ctx.send("❌ 빈 대기열입니다. 재생을 종료합니다.")
         return
 
@@ -74,19 +85,19 @@ async def play_music(ctx, refresh):
         voice_client = await channel.connect()
 
     song = music_queue[ctx.guild.id].pop(0)
-    if not refresh:
-        currently_playing[ctx.guild.id] = song
-        source = discord.PCMVolumeTransformer(
-            discord.FFmpegPCMAudio(song['source'], **FFMPEG_OPTIONS))
-    else:
-        refresh_song = get_stream_url_by_yt_url(song['webpage_url'])
-        currently_playing[ctx.guild.id] = refresh_song
-        source = discord.PCMVolumeTransformer(
-            discord.FFmpegPCMAudio(refresh_song['source'], **FFMPEG_OPTIONS))
+
+    if refresh:
+        try:
+            song = await get_info_async(ctx.bot, song['webpage_url'])
+        except Exception as e:
+            logging.info(f"예외 발생: {e}")
+
+    currently_playing[ctx.guild.id] = song
+    source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(song['source'], **FFMPEG_OPTIONS))
 
     def after_playing(error):
         if error:
-            logging.info("에러 발생:", error)
+            logging.info(f"에러 발생: {error}")
         voice_client = discord.utils.get(ctx.bot.voice_clients, guild=ctx.guild)
 
         if len(music_queue[ctx.guild.id]) == 0:
@@ -102,6 +113,7 @@ async def play_music(ctx, refresh):
                 fut.result()
             except Exception as e:
                 logging.info(f"ctx.send 중 예외 발생: {e}")
+
             return
 
         fut = asyncio.run_coroutine_threadsafe(play_music(ctx, True), ctx.bot.loop)
@@ -139,9 +151,9 @@ def register_music_commands(bot: commands.Bot):
             is_link = True
 
         if is_link:
-            song = get_stream_url_by_yt_url(arg)
+            song = await get_info_async(ctx, arg, is_url=is_link)
         else:
-            song = get_stream_url_by_query(arg)
+            song = await get_info_async(ctx, arg)
 
         if not song:
             await ctx.send("❌ 노래 탐색에 실패했습니다.")
