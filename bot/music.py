@@ -3,6 +3,7 @@ import asyncio
 import logging
 import discord
 import yt_dlp
+import aiohttp
 from discord.ext import commands
 
 logging.basicConfig(level=logging.INFO)
@@ -36,7 +37,6 @@ def get_stream_url_by_query(query):
         info = ydl.extract_info(f"ytsearch1:{query}", download=False)
         if 'entries' in info:
             info = info['entries'][0]
-
         duration = info['duration']
         if duration > MAX_DURATION:
             raise VideoTooLongError(duration, MAX_DURATION)
@@ -44,6 +44,9 @@ def get_stream_url_by_query(query):
         return {
             'source': info['url'],
             'title': info['title'],
+            'uploader': info['uploader'],
+            'image': info['thumbnail'],
+            'video_id': info['display_id'],
             'webpage_url': info['webpage_url']
         }
 
@@ -61,6 +64,9 @@ def get_stream_url_by_yt_url(youtube_url):
         return {
             'source': info['url'],
             'title': info['title'],
+            'uploader': info['uploader'],
+            'image': info['thumbnail'],
+            'video_id': info['display_id'],
             'webpage_url': info['webpage_url']
         }
 
@@ -71,6 +77,27 @@ async def get_info_async(ctx, query, is_url=False):
         return await loop.run_in_executor(None, lambda: get_stream_url_by_yt_url(query))
     else:
         return await loop.run_in_executor(None, lambda: get_stream_url_by_query(query))
+
+
+async def send_play_history(song, discord_id):
+    url = "https://ub-chichi.site/api/bot/recent-played-song"
+    data = {
+        "title": song.get('title', 'Unknown Title'),
+        "uploader": song.get('uploader', 'Unknown Uploader'),
+        "image": song.get('image', 'null'),
+        "videoId": song.get('video_id'),
+        "discordId": int(discord_id)
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=data) as response:
+                if response.status == 200:
+                    logging.info(f"API 전송 성공: {song['title']}")
+                else:
+                    logging.info(f"API 전송 실패: {response.status}")
+    except Exception as e:
+        logging.info(f"API 요청 중 예외 발생: {e}")
 
 
 async def play_music(ctx, refresh):
@@ -88,11 +115,12 @@ async def play_music(ctx, refresh):
 
     if refresh:
         try:
-            song = await get_info_async(ctx.bot, song['webpage_url'])
+            song = await get_info_async(ctx, song['webpage_url'], is_url=True)
         except Exception as e:
             logging.info(f"예외 발생: {e}")
 
     currently_playing[ctx.guild.id] = song
+    asyncio.create_task(send_play_history(song, ctx.author.id))
     source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(song['source'], **FFMPEG_OPTIONS))
 
     def after_playing(error):
@@ -100,7 +128,8 @@ async def play_music(ctx, refresh):
             logging.info(f"에러 발생: {error}")
         voice_client = discord.utils.get(ctx.bot.voice_clients, guild=ctx.guild)
 
-        if len(music_queue[ctx.guild.id]) == 0:
+        music_queue_list = music_queue.get(ctx.guild.id, [])
+        if not music_queue_list:
             fut = asyncio.run_coroutine_threadsafe(voice_client.disconnect(), ctx.bot.loop)
             try:
                 fut.result()
