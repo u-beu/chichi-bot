@@ -4,3 +4,5 @@ discord
 python-dotenv
 pynacl
 aiohttp
+pytest
+pytest-asyncio
