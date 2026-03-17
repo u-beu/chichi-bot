@@ -1,35 +1,20 @@
-import yt_dlp
-import discord
+# 음악 관련 유틸과 명령어 정의
 import asyncio
 import logging
+import discord
+import yt_dlp
+import aiohttp
 from discord.ext import commands
-import os
-from dotenv import load_dotenv
-
-load_dotenv()
-PROXY_USERNAME = os.getenv("PROXY_USERNAME")
-PROXY_PASSWORD = os.getenv("PROXY_PASSWORD")
-PROXY_HOST = os.getenv("PROXY_HOST")
-PROXY_PORT = os.getenv("PROXY_PORT")
 
 logging.basicConfig(level=logging.INFO)
 
 MAX_DURATION = 7200
-proxy_url=f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_HOST}:{PROXY_PORT}"
-logging.info(f"proxy url:{proxy_url}")
-
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
     'quiet': True,
     'default_search': 'ytsearch',
     'noplaylist': True,
-    'extract_audio': True,
-    'proxy': proxy_url,
-    'cookiefile': '/app/cookies.txt',
-    'cacerts': '/app/proxy-ca.crt',
-    'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
-    }
+    'extract_audio': True
 }
 FFMPEG_OPTIONS = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
@@ -39,18 +24,19 @@ FFMPEG_OPTIONS = {
 music_queue = {}
 currently_playing = {}
 
+
 class VideoTooLongError(Exception):
     def __init__(self, duration, max_duration):
         super().__init__(f"영상 길이({duration}s)는 {max_duration}s(2시간) 미만이어야 합니다.")
         self.duration = duration
         self.max_duration = max_duration
 
+
 def get_stream_url_by_query(query):
     with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
         info = ydl.extract_info(f"ytsearch1:{query}", download=False)
         if 'entries' in info:
             info = info['entries'][0]
-
         duration = info['duration']
         if duration > MAX_DURATION:
             raise VideoTooLongError(duration, MAX_DURATION)
@@ -58,7 +44,9 @@ def get_stream_url_by_query(query):
         return {
             'source': info['url'],
             'title': info['title'],
-            'webpage_url': info['webpage_url']
+            'uploader': info['uploader'],
+            'image': info['thumbnail'],
+            'video_id': info['display_id']
         }
 
 
@@ -75,12 +63,44 @@ def get_stream_url_by_yt_url(youtube_url):
         return {
             'source': info['url'],
             'title': info['title'],
-            'webpage_url': info['webpage_url']
+            'uploader': info['uploader'],
+            'image': info['thumbnail'],
+            'video_id': info['display_id']
         }
 
 
+async def get_info_async(ctx, query, is_url=False):
+    loop = ctx.bot.loop
+    if is_url:
+        return await loop.run_in_executor(None, lambda: get_stream_url_by_yt_url(query))
+    else:
+        return await loop.run_in_executor(None, lambda: get_stream_url_by_query(query))
+
+
+async def send_play_history(song, discord_id):
+    url = "https://ub-chichi.site/api/bot/recent-played-song"
+    data = {
+        "title": song.get('title', 'Unknown Title'),
+        "uploader": song.get('uploader', 'Unknown Uploader'),
+        "image": song.get('image', 'null'),
+        "videoId": song.get('video_id'),
+        "discordId": int(discord_id)
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=data) as response:
+                if response.status == 200:
+                    logging.info(f"API 전송 성공: {song['title']}")
+                else:
+                    logging.info(f"API 전송 실패: {response.status}")
+    except Exception as e:
+        logging.info(f"API 요청 중 예외 발생: {e}")
+
+
 async def play_music(ctx, refresh):
-    if len(music_queue) == 0:
+    music_queue_list = music_queue.get(ctx.guild.id, [])
+    if not music_queue_list:
         await ctx.send("❌ 빈 대기열입니다. 재생을 종료합니다.")
         return
 
@@ -90,22 +110,25 @@ async def play_music(ctx, refresh):
         voice_client = await channel.connect()
 
     song = music_queue[ctx.guild.id].pop(0)
-    if not refresh:
-        currently_playing[ctx.guild.id] = song
-        source = discord.PCMVolumeTransformer(
-            discord.FFmpegPCMAudio(song['source'], **FFMPEG_OPTIONS))
-    else:
-        refresh_song = get_stream_url_by_yt_url(song['webpage_url'])
-        currently_playing[ctx.guild.id] = refresh_song
-        source = discord.PCMVolumeTransformer(
-            discord.FFmpegPCMAudio(refresh_song['source'], **FFMPEG_OPTIONS))
+
+    if refresh:
+        try:
+            webUrl=f"https://www.youtube.com/watch?v={song['video_id']}"
+            song = await get_info_async(ctx, webUrl, is_url=True)
+        except Exception as e:
+            logging.info(f"예외 발생: {e}")
+
+    currently_playing[ctx.guild.id] = song
+    asyncio.create_task(send_play_history(song, ctx.author.id))
+    source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(song['source'], **FFMPEG_OPTIONS))
 
     def after_playing(error):
         if error:
-            logging.info("에러 발생:", error)
+            logging.info(f"에러 발생: {error}")
         voice_client = discord.utils.get(ctx.bot.voice_clients, guild=ctx.guild)
 
-        if len(music_queue[ctx.guild.id]) == 0:
+        music_queue_list = music_queue.get(ctx.guild.id, [])
+        if not music_queue_list:
             fut = asyncio.run_coroutine_threadsafe(voice_client.disconnect(), ctx.bot.loop)
             try:
                 fut.result()
@@ -118,6 +141,7 @@ async def play_music(ctx, refresh):
                 fut.result()
             except Exception as e:
                 logging.info(f"ctx.send 중 예외 발생: {e}")
+
             return
 
         fut = asyncio.run_coroutine_threadsafe(play_music(ctx, True), ctx.bot.loop)
@@ -155,9 +179,9 @@ def register_music_commands(bot: commands.Bot):
             is_link = True
 
         if is_link:
-            song = get_stream_url_by_yt_url(arg)
+            song = await get_info_async(ctx, arg, is_url=is_link)
         else:
-            song = get_stream_url_by_query(arg)
+            song = await get_info_async(ctx, arg)
 
         if not song:
             await ctx.send("❌ 노래 탐색에 실패했습니다.")
@@ -165,21 +189,16 @@ def register_music_commands(bot: commands.Bot):
 
         voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
 
-        if is_add:
-            music_queue.setdefault(ctx.guild.id, []).append(song)
-            await ctx.send(f"✅ 대기열 추가: **{song['title']}**")
-            if voice_client and voice_client.is_playing():
+        if voice_client and voice_client.is_playing():
+            if is_add:
+                music_queue.setdefault(ctx.guild.id, []).append(song)
+                await ctx.send(f"✅ 대기열 추가: **{song['title']}**")
                 return
             else:
-                await ctx.send(f"▶️ 즉시 재생합니다.")
-                await play_music(ctx, True)
+                music_queue.setdefault(ctx.guild.id, []).insert(0, song)
+                voice_client.stop()
+                await ctx.send(f"▶️ 현재 곡을 중단하고 즉시 재생합니다.")
                 return
-
-        if voice_client and voice_client.is_playing():
-            current_song = currently_playing.get(ctx.guild.id)
-            if current_song:
-                music_queue.setdefault(ctx.guild.id, []).insert(0, current_song)
-            voice_client.stop()
 
         music_queue.setdefault(ctx.guild.id, []).insert(0, song)
         await ctx.send(f"▶️ 즉시 재생합니다.")
@@ -246,7 +265,7 @@ def register_music_commands(bot: commands.Bot):
         await ctx.send("🔵 **!play** <검색어/유튜브 링크> : 요청한 노래를 즉시 재생합니다.\n(재생 중이던 노래가 있을 경우 다시 대기열에 넣습니다.)\n\n" +
                        "🔵 **!play --add** <검색어/유튜브 링크> : 요청한 노래를 대기열 리스트에 추가합니다.\n(현재 재생 중인 노래를 유지합니다.)\n\n" +
                        "🟡 **!skip** : 대기열 리스트에서 다음 곡을 재생합니다.\n\n" +
-                       "🔴 **!stop** : 현재 재생중인 노래를 중단합니다.\n(대기열 리스트는 중단한 노래를 포함해 유지됩니다.)\n\n" +
+                       "🔴 **!stop** : 현재 재생중인 노래를 중단합니다.\n\n" +
                        "🟢 **!resume** : 대기열 리스트를 기준으로 노래를 다시 재생합니다.\n\n" +
                        "🟣 **!queue** : 대기열 리스트를 확인합니다.\n\n" +
                        "🟣 **!clear** : 대기열 리스트를 초기화합니다.(리스트의 노래를 모두 삭제합니다.)\n\n")

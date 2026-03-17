@@ -7,27 +7,31 @@ def test_get_stream_url_by_query(mock_ydl_class):
     mock_ydl_instance = MagicMock()
     mock_ydl_instance.extract_info.return_value = {
         'entries': [{
-            'url': 'https://example.com/audio',
-            'title': 'Test Song',
-            'webpage_url': 'https://youtube.com/watch?v=1234',
+            'url': 'https://test/audio',
+            'title': 'test-song',
+            'uploader': 'test-uploader',
+            'thumbnail': 'https://test/thumbnail',
+            'display_id': 'A1B2C3D4',
             'duration': 100
         }]
     }
     mock_ydl_class.return_value.__enter__.return_value = mock_ydl_instance
 
-    result = get_stream_url_by_query("test song")
-    assert result['source'] == 'https://example.com/audio'
-    assert result['title'] == 'Test Song'
-    assert result['webpage_url'] == 'https://youtube.com/watch?v=1234'
+    result = get_stream_url_by_query("song query")
+    assert result['source'] == 'https://test/audio'
+    assert result['title'] == 'test-song'
+    assert result['video_id'] == 'A1B2C3D4'
 
 @patch("yt_dlp.YoutubeDL")
 def test_get_stream_url_too_long(mock_ydl_class):
     mock_ydl_instance = MagicMock()
     mock_ydl_instance.extract_info.return_value = {
         'entries': [{
-            'url': 'https://example.com/audio',
-            'title': 'Too Long Test Song',
-            'webpage_url': 'https://youtube.com/watch?v=5678',
+            'url': 'https://test/audio',
+            'title': 'test-song',
+            'uploader': 'test-uploader',
+            'thumbnail': 'https://test/thumbnail',
+            'display_id': 'A1B2C3D4',
             'duration': 99999
         }]
     }
