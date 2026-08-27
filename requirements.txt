@@ -4,5 +4,8 @@ discord
 python-dotenv
 pynacl
 aiohttp
+fastapi
+uvicorn[standard]
+redis
 pytest
 pytest-asyncio

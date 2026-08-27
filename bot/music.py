@@ -21,7 +21,7 @@ FFMPEG_OPTIONS = {
     'options': '-vn -bufsize 512k'
 }
 
-music_queue = {}
+guild_music_queues = {}
 currently_playing = {}
 
 
@@ -32,11 +32,101 @@ class VideoTooLongError(Exception):
         self.max_duration = max_duration
 
 
-def get_stream_url_by_query(query):
+async def handle_api_playback(bot, guild_id: int, user_id: int, query: str):
+    query = (query or "").strip()
+    if not query:
+        logging.info("API playback: empty query")
+        return
+
+    guild = bot.get_guild(guild_id)
+    if guild is None:
+        logging.info("API playback: guild not found (%s)", guild_id)
+        return
+
+    member = guild.get_member(user_id)
+    if member is None:
+        try:
+            member = await guild.fetch_member(user_id)
+        except discord.NotFound:
+            logging.info("API playback: member not found (%s)", user_id)
+            return
+
+    if not member.voice or not member.voice.channel:
+        logging.info("API playback: member not in voice channel (%s)", user_id)
+        return
+
+    user_channel = member.voice.channel
+    voice_client = discord.utils.get(bot.voice_clients, guild=guild)
+
+    if voice_client and voice_client.is_connected():
+        if voice_client.channel != user_channel:
+            await voice_client.move_to(user_channel)
+    else:
+        voice_client = await user_channel.connect()
+
+    loop = bot.loop or asyncio.get_running_loop()
+    try:
+        song = await loop.run_in_executor(None, lambda: get_stream_url_by_query(query))
+    except VideoTooLongError as e:
+        logging.info("API playback: %s", e)
+        return
+    except Exception as e:
+        logging.info("API playback: song lookup failed: %s", e)
+        return
+
+    queue = guild_music_queues.setdefault(guild_id, [])
+    queue.insert(0, song)
+
+    is_playing_now = voice_client.is_playing() or voice_client.is_paused()
+    if not is_playing_now:
+        await _play_next_for_guild(bot, guild, user_id)
+    else:
+        logging.info("API playback: queued %s", song["title"])
+
+
+async def _play_next_for_guild(bot, guild, user_id):
+    queue = guild_music_queues.get(guild.id, [])
+    if not queue:
+        return
+
+    voice_client = discord.utils.get(bot.voice_clients, guild=guild)
+    if not voice_client or not voice_client.is_connected():
+        return
+
+    song = queue.pop(0)
+    currently_playing[guild.id] = song
+    asyncio.create_task(send_play_history(song, user_id))
+
+    source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(song['source'], **FFMPEG_OPTIONS))
+
+    def after_playing(error):
+        if error:
+            logging.info(f"에러 발생: {error}")
+
+        async def play_or_disconnect():
+            next_voice_client = discord.utils.get(bot.voice_clients, guild=guild)
+            if not next_voice_client or not next_voice_client.is_connected():
+                return
+
+            if guild_music_queues.get(guild.id, []):
+                await _play_next_for_guild(bot, guild, user_id)
+                return
+
+            await next_voice_client.disconnect()
+
+        asyncio.run_coroutine_threadsafe(play_or_disconnect(), bot.loop)
+
+
+def get_stream_url_by_query(query, is_url=False):
     with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-        info = ydl.extract_info(f"ytsearch1:{query}", download=False)
+        if is_url:
+            info = ydl.extract_info(query, download=False)
+        else:
+            info = ydl.extract_info(f"ytsearch1:{query}", download=False)
+
         if 'entries' in info:
             info = info['entries'][0]
+
         duration = info['duration']
         if duration > MAX_DURATION:
             raise VideoTooLongError(duration, MAX_DURATION)
@@ -48,33 +138,10 @@ def get_stream_url_by_query(query):
             'image': info['thumbnail'],
             'video_id': info['display_id']
         }
-
-
-def get_stream_url_by_yt_url(youtube_url):
-    with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-        info = ydl.extract_info(youtube_url, download=False)
-        if 'entries' in info:
-            info = info['entries'][0]
-
-        duration = info['duration']
-        if duration > MAX_DURATION:
-            raise VideoTooLongError(duration, MAX_DURATION)
-
-        return {
-            'source': info['url'],
-            'title': info['title'],
-            'uploader': info['uploader'],
-            'image': info['thumbnail'],
-            'video_id': info['display_id']
-        }
-
 
 async def get_info_async(ctx, query, is_url=False):
     loop = ctx.bot.loop
-    if is_url:
-        return await loop.run_in_executor(None, lambda: get_stream_url_by_yt_url(query))
-    else:
-        return await loop.run_in_executor(None, lambda: get_stream_url_by_query(query))
+    return await loop.run_in_executor(None, lambda: get_stream_url_by_query(query, is_url))
 
 
 async def send_play_history(song, discord_id):
@@ -99,8 +166,8 @@ async def send_play_history(song, discord_id):
 
 
 async def play_music(ctx, refresh):
-    music_queue_list = music_queue.get(ctx.guild.id, [])
-    if not music_queue_list:
+    queue = guild_music_queues.get(ctx.guild.id, [])
+    if not queue:
         await ctx.send("❌ 빈 대기열입니다. 재생을 종료합니다.")
         return
 
@@ -109,7 +176,7 @@ async def play_music(ctx, refresh):
         channel = ctx.author.voice.channel
         voice_client = await channel.connect()
 
-    song = music_queue[ctx.guild.id].pop(0)
+    song = guild_music_queues[ctx.guild.id].pop(0)
 
     if refresh:
         try:
@@ -127,8 +194,8 @@ async def play_music(ctx, refresh):
             logging.info(f"에러 발생: {error}")
         voice_client = discord.utils.get(ctx.bot.voice_clients, guild=ctx.guild)
 
-        music_queue_list = music_queue.get(ctx.guild.id, [])
-        if not music_queue_list:
+        queue = guild_music_queues.get(ctx.guild.id, [])
+        if not queue:
             fut = asyncio.run_coroutine_threadsafe(voice_client.disconnect(), ctx.bot.loop)
             try:
                 fut.result()
@@ -179,7 +246,7 @@ def register_music_commands(bot: commands.Bot):
             is_link = True
 
         if is_link:
-            song = await get_info_async(ctx, arg, is_url=is_link)
+            song = await get_info_async(ctx, arg, is_link)
         else:
             song = await get_info_async(ctx, arg)
 
@@ -191,16 +258,16 @@ def register_music_commands(bot: commands.Bot):
 
         if voice_client and voice_client.is_playing():
             if is_add:
-                music_queue.setdefault(ctx.guild.id, []).append(song)
+                guild_music_queues.setdefault(ctx.guild.id, []).append(song)
                 await ctx.send(f"✅ 대기열 추가: **{song['title']}**")
                 return
             else:
-                music_queue.setdefault(ctx.guild.id, []).insert(0, song)
+                guild_music_queues.setdefault(ctx.guild.id, []).insert(0, song)
                 voice_client.stop()
                 await ctx.send(f"▶️ 현재 곡을 중단하고 즉시 재생합니다.")
                 return
 
-        music_queue.setdefault(ctx.guild.id, []).insert(0, song)
+        guild_music_queues.setdefault(ctx.guild.id, []).insert(0, song)
         await ctx.send(f"▶️ 즉시 재생합니다.")
         await play_music(ctx, False)
 
@@ -215,7 +282,7 @@ def register_music_commands(bot: commands.Bot):
     async def stop(ctx):
         voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
         current_song = currently_playing.get(ctx.guild.id)
-        music_queue.setdefault(ctx.guild.id, []).insert(0, current_song)
+        guild_music_queues.setdefault(ctx.guild.id, []).insert(0, current_song)
 
         if voice_client:
             await voice_client.disconnect()
@@ -229,7 +296,7 @@ def register_music_commands(bot: commands.Bot):
             await ctx.send("🎶 이미 노래를 재생 중입니다.")
             return
 
-        if not music_queue.get(ctx.guild.id) or len(music_queue) == 0:
+        if not guild_music_queues.get(ctx.guild.id) or len(guild_music_queues) == 0:
             await ctx.send("❌ 빈 대기열입니다.")
             return
 
@@ -238,25 +305,25 @@ def register_music_commands(bot: commands.Bot):
 
     @bot.command()
     async def queue(ctx):
-        queue_list = music_queue.get(ctx.guild.id, [])
+        queue = guild_music_queues.get(ctx.guild.id, [])
 
-        if not queue_list:
+        if not queue:
             await ctx.send("빈 대기열")
             return
 
         queue_message = "**🗒️대기열 목록:**\n"
-        for idx, song in enumerate(queue_list[:10], start=1):
+        for idx, song in enumerate(queue[:10], start=1):
             queue_message += f"{idx}. {song['title']}\n"
 
-        if len(queue_list) > 10:
-            queue_message += f"...외 {len(queue_list) - 10}곡 더 있음"
+        if len(queue) > 10:
+            queue_message += f"...외 {len(queue) - 10}곡 더 있음"
 
         await ctx.send(queue_message)
 
     @bot.command()
     async def clear(ctx):
-        queue_list = music_queue.get(ctx.guild.id, [])
-        queue_list.clear()
+        queue = guild_music_queues.get(ctx.guild.id, [])
+        queue.clear()
         await ctx.send("▶️ 대기열 목록 초기화")
 
     @bot.command(name="help")
