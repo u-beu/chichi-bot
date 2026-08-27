@@ -53,10 +53,10 @@ async def _subscriber_loop(bot):
             logger.info("레디스 구독 중지")
             raise
         except redis.RedisError:
-            logger.exception("에러 발생: 레디스: 재시작 3초")
+            logger.exception("예외 발생: 레디스: 재시작 3초")
             await asyncio.sleep(3)
         except Exception:
-            logger.exception("에러 발생: 커맨드 처리과정")
+            logger.exception("예외 발생: 커맨드 처리과정")
 
 
 def start_subscriber(bot):

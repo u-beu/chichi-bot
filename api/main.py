@@ -26,7 +26,7 @@ async def playback(request: PlaybackRequest):
             query=request.query,
         )
     except redis.RedisError as e:
-        logger.exception(f"레디스 에러 발생: {e}")
+        logger.exception("예외 발생: %s", e)
         raise HTTPException(status_code=503, detail="레디스 불가능") from e
 
     return PlaybackResponse(

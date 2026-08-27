@@ -5,7 +5,7 @@ import yt_dlp
 import aiohttp
 from discord.ext import commands
 
-logging.basicConfig(level=logger.info)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 MAX_DURATION = 7200
@@ -74,7 +74,7 @@ async def send_play_history(song: dict, discord_id: int):
                 else:
                     logger.info(f"API 전송 실패: {response.status}")
     except Exception as e:
-        logger.exception(f"예외 발생: {e}")
+        logger.exception("예외 발생: %s", e)
 
 
 async def handle_api_playback(bot: commands.Bot, guild_id: int, user_id: int, query: str):
@@ -101,7 +101,7 @@ async def handle_api_playback(bot: commands.Bot, guild_id: int, user_id: int, qu
 
 def after_playing(bot: commands.Bot, guild: discord.Guild, member: discord.Member, ctx: commands.Context=None, error=None):
     if error:
-        logger.error(f"에러 발생: {error}")
+        logger.error("에러 발생: %s", error, exc_info=error)
 
     async def next():
         voice_client = discord.utils.get(bot.voice_clients, guild=guild)
@@ -144,7 +144,7 @@ async def play_music(bot: commands.Bot, guild: discord.Guild, member: discord.Me
             loop = bot.loop or asyncio.get_running_loop()
             song = await loop.run_in_executor(None, lambda: get_song_info(webUrl, from_url=True))
         except Exception as e:
-            logger.exception(f"예외 발생: 음원 정보 갱신 실패 {e}")
+            logger.exception("예외 발생: 음원 정보 갱신 실패: %s", e)
 
     asyncio.create_task(send_play_history(song, member.id))
     source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(song['source'], **FFMPEG_OPTIONS))
@@ -155,7 +155,7 @@ async def play_music(bot: commands.Bot, guild: discord.Guild, member: discord.Me
     try:
         await target_channel.send(f"🎶 재생중: **{song['title']}**")
     except Exception as e:
-        logger.exception(f"예외 발생: {e}")
+        logger.exception("예외 발생: %s", e)
 
 def register_music_commands(bot: commands.Bot):
     @bot.command()
