@@ -17,7 +17,7 @@ async def health():
     return {"status": "ok"}
 
 
-@app.post("/api/playback", response_model=PlaybackResponse, status_code=202)
+@app.post("/playback", response_model=PlaybackResponse, status_code=202)
 async def playback(request: PlaybackRequest):
     try:
         publish_playback(
@@ -26,10 +26,10 @@ async def playback(request: PlaybackRequest):
             query=request.query,
         )
     except redis.RedisError as e:
-        logger.exception("Redis publish failed")
-        raise HTTPException(status_code=503, detail="Redis unavailable") from e
+        logger.exception(f"레디스 에러 발생: {e}")
+        raise HTTPException(status_code=503, detail="레디스 불가능") from e
 
     return PlaybackResponse(
-        status="queued",
-        message="Command published to bot queue",
+        status="성공",
+        message="재생 요청 완료",
     )
