@@ -7,14 +7,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     libopus-dev \
     ffmpeg \
+    atomicparsley \
     nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir "discord.py[voice]" yt-dlp && \
+    pip install --no-cache-dir "discord.py[voice]" && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+EXPOSE 5000
 
 CMD ["python", "main.py"]

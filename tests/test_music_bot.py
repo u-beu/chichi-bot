@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from discord.ext import commands
 
-from bot.music import music_queue, play_music, register_music_commands
+from bot.music import guild_music_queues, play_music, register_music_commands
 
 
 @pytest.mark.asyncio
@@ -66,15 +66,15 @@ async def test_play_command_check_add():
     with patch("bot.music.get_info_async", new_callable=AsyncMock) as mock_get_info, \
             patch("bot.music.play_music") as mock_play_music, \
             patch("discord.utils.get", return_value=mock_voice_client), \
-            patch("bot.music.music_queue", {}) as mock_music_queue:
+            patch("bot.music.guild_music_queues", {}) as mock_guild_music_queues:
         mock_get_info.return_value = {"source": "test-source",
                                       "title": "test-title",
                                       "video_id": "test-videoId"}
 
         await play_cmd.callback(mock_ctx, arg="--add test_song")
 
-        assert len(mock_music_queue[mock_ctx.guild.id]) == 1
-        assert mock_music_queue[mock_ctx.guild.id][0]["title"] == "test-title"
+        assert len(mock_guild_music_queues[mock_ctx.guild.id]) == 1
+        assert mock_guild_music_queues[mock_ctx.guild.id][0]["title"] == "test-title"
 
         mock_play_music.assert_not_called()
         mock_ctx.send.assert_called_once_with("✅ 대기열 추가: **test-title**")
@@ -92,7 +92,7 @@ async def test_after_playing():
     mock_ctx.bot.loop = asyncio.get_event_loop()
     mock_ctx.bot.voice_clients = []
 
-    music_queue[mock_ctx.guild.id] = [
+    guild_music_queues[mock_ctx.guild.id] = [
         {"title": "test-title1", "source": "test_source_url1", "video_id": "test-videoId1"},
         {"title": "test-title2", "source": "test_source_url2", "video_id": "test-videoId2"}
     ]
@@ -112,7 +112,7 @@ async def test_after_playing():
         mock_ffmpeg.return_value = MagicMock()
 
         await play_music(mock_ctx, refresh=False)
-        assert len(music_queue[mock_ctx.guild.id]) == 1
+        assert len(guild_music_queues[mock_ctx.guild.id]) == 1
 
         _, kwargs = mock_voice_client.play.call_args
         after_callback = kwargs.get('after')
@@ -121,7 +121,7 @@ async def test_after_playing():
         assert mock_threadsafe.called
 
         await play_music(mock_ctx, refresh=True)
-        assert len(music_queue[mock_ctx.guild.id]) == 0
+        assert len(guild_music_queues[mock_ctx.guild.id]) == 0
 
 
 @pytest.mark.asyncio
