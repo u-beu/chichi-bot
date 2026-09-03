@@ -17,12 +17,24 @@ YDL_OPTIONS = {
     'extract_audio': True
 }
 FFMPEG_OPTIONS = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn -bufsize 512k'
+    'before_options': (
+        '-reconnect 1 '
+        '-reconnect_streamed 1 '
+        '-reconnect_delay_max 5 '
+        '-probesize 32M '
+        '-analyzeduration 0'
+    ),
+    'options': (
+        '-vn '
+        '-b:a 192k '
+        '-bufsize 128k '
+        '-ar 48000 '
+        '-ac 2 '
+        '-c:a libopus'
+    )
 }
 
 guild_music_queues = {}
-
 
 class VideoTooLongError(Exception):
     def __init__(self, duration, max_duration):
