@@ -1,0 +1,49 @@
+# 개인 설정/보안 파일
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.crt
+*.sql
+*.sqlite
+credentials.json
+service-account.json
+
+# 파이썬 빌드 파일
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE 설정 파일
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 로그 및 미디어 파일
+*.log
+logs/
+*.pt
+*.pth
+*.bin
+*.onnx
+*.mp3
+*.wav
+*.flac
+*.mp4
+
+# 기타 빌드 파일
+node_modules/
+build/
+.gradle/
+target/
+out/
