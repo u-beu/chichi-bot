@@ -68,7 +68,7 @@ async def get_info_async(ctx: commands.Context, query: str, *, is_url: bool = Fa
     return await loop.run_in_executor(None, lambda: get_song_info(query, from_url=is_url))
 
 
-async def send_play_history(song: dict, discord_id: int):
+async def send_play_history(song: dict, discord_id: int, session: aiohttp.ClientSession):
     url = "https://ub-chichi.site/api/bot/recent-played-song"
     data = {
         "title": song.get('title', 'Unknown Title'),
@@ -79,12 +79,11 @@ async def send_play_history(song: dict, discord_id: int):
     }
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=data) as response:
-                if response.status == 200:
-                    logger.info(f"API 전송 성공: {song['title']}")
-                else:
-                    logger.info(f"API 전송 실패: {response.status}")
+        async with session.post(url, json=data) as response:
+            if response.status == 200:
+                logger.info(f"API 전송 성공: {song['title']}")
+            else:
+                logger.info(f"API 전송 실패: {response.status}")
     except Exception as e:
         logger.exception("예외 발생: %s", e)
 
@@ -158,7 +157,7 @@ async def play_music(bot: commands.Bot, guild: discord.Guild, member: discord.Me
         except Exception as e:
             logger.exception("예외 발생: 음원 정보 갱신 실패: %s", e)
 
-    asyncio.create_task(send_play_history(song, member.id))
+    asyncio.create_task(send_play_history(song, member.id, bot.http_session))
     source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(song['source'], **FFMPEG_OPTIONS))
 
     voice_client.play(source, after=lambda e: after_playing(bot, guild, member, ctx, e))
