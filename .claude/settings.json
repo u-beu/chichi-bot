@@ -18,6 +18,5 @@
   "attribution": {
     "commit": "",
     "pr": ""
-  },
-  "customInstructions": "When executing any Git or inspection commands (e.g., git log, git status, git diff, git branch, gh, etc.), NEVER summarize or translate the output into natural language. ALWAYS print the exact raw CLI output directly inside a markdown code block."
+  }
 }
