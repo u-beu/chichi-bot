@@ -14,5 +14,9 @@
       "Bash(git diff:*)",
       "Bash(git branch:*)"
     ]
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
   }
 }
