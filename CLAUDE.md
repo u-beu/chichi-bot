@@ -26,6 +26,5 @@
 
 # Output Instructions
 
-## Terminal & Git Output Rules
-- When running ANY Git or CLI commands (e.g., `git status`, `git log`, `git diff`, `git branch`, `gh`, etc.), NEVER summarize, rephrase, or explain the output in natural language sentences.
-- ALWAYS display the EXACT raw CLI output directly inside a single markdown code block.
+## Pull Request Guidelines
+- When creating or updating Pull Requests (`gh pr create`, `gh pr edit`), DO NOT include session links or automated signatures at the bottom of the PR description (e.g., `https://claude.ai/code/session_...`).
