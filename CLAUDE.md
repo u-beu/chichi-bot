@@ -21,8 +21,12 @@
 - **Async & Non-blocking:** All I/O operations must be non-blocking (`async/await`). Offload heavy CPU-bound tasks to worker processes.
 - **Memory Management:** Strictly enforce memory boundaries for the 8GB RAM environment across all sub-modules.
 
+## Workflow Rules
+- Always operate in Plan Mode: before making any code changes, present a plan and get explicit user approval first.
+
 ## Output Style
 - Concise responses only.
+- Always respond in Korean (한국어로 항상 답변할 것).
 
 # Output Instructions
 
