@@ -23,6 +23,8 @@
 
 ## Workflow Rules
 - Always operate in Plan Mode: before making any code changes, present a plan and get explicit user approval first.
+- **Branching:** Follow the branch naming rules in [docs/branching.md](docs/branching.md) (`<type>/<description>`, or `<type>/<issue-number>-<description>` when a GitHub issue exists).
+- **Start on a new branch:** Before starting any task, create a new branch following the naming rule above and switch to it (never work directly on `main`).
 
 ## Output Style
 - Concise responses only.
