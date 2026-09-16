@@ -3,7 +3,7 @@ import aiohttp
 import discord
 from discord.ext import commands
 from .error_handler import setup_error_handlers
-from .music import register_music_commands
+from .music import MusicCog
 from .subscriber import start_subscriber
 
 logging.basicConfig(level=logging.INFO)
@@ -20,6 +20,7 @@ class ChichiBot(commands.Bot):
 
     async def setup_hook(self):
         self.http_session = aiohttp.ClientSession()
+        await self.add_cog(MusicCog(self))
 
     async def close(self):
         if self.http_session:
@@ -36,5 +37,4 @@ async def on_ready():
     start_subscriber(bot)
 
 setup_error_handlers(bot)
-register_music_commands(bot)
 

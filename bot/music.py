@@ -168,9 +168,12 @@ async def play_music(bot: commands.Bot, guild: discord.Guild, member: discord.Me
     except Exception as e:
         logger.exception("예외 발생: %s", e)
 
-def register_music_commands(bot: commands.Bot):
-    @bot.command()
-    async def play(ctx, *, arg=None):
+class MusicCog(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+
+    @commands.command()
+    async def play(self, ctx, *, arg=None):
         if not ctx.author.voice or not ctx.author.voice.channel:
             await ctx.send("⛔ 음성 채널에서 호출해주세요.")
             return
@@ -197,7 +200,7 @@ def register_music_commands(bot: commands.Bot):
             await ctx.send("❌ 노래 탐색에 실패했습니다.")
             return
 
-        voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
 
         if voice_client and voice_client.is_playing():
             if is_add:
@@ -214,24 +217,24 @@ def register_music_commands(bot: commands.Bot):
         await ctx.send(f"▶️ 즉시 재생합니다.")
         await play_music(ctx.bot, ctx.guild, ctx.author, ctx=ctx, is_refresh=False)
 
-    @bot.command()
-    async def skip(ctx):
-        voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+    @commands.command()
+    async def skip(self, ctx):
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
         if voice_client and voice_client.is_playing():
             await ctx.send("⏭️ 다음 곡을 재생합니다.")
             voice_client.stop()
 
-    @bot.command()
-    async def stop(ctx):
-        voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+    @commands.command()
+    async def stop(self, ctx):
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
 
         if voice_client:
             await voice_client.disconnect()
             await ctx.send("🛑 노래 재생을 중지합니다.")
 
-    @bot.command()
-    async def resume(ctx):
-        voice_client = discord.utils.get(bot.voice_clients, guild=ctx.guild)
+    @commands.command()
+    async def resume(self, ctx):
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
 
         if voice_client and voice_client.is_playing():
             await ctx.send("🎶 이미 노래를 재생 중입니다.")
@@ -244,8 +247,8 @@ def register_music_commands(bot: commands.Bot):
         await ctx.send("✅ 다시 재생합니다.")
         await play_music(ctx.bot, ctx.guild, ctx.author, ctx=ctx, is_refresh=True)
 
-    @bot.command()
-    async def queue(ctx):
+    @commands.command()
+    async def queue(self, ctx):
         queue = guild_music_queues.get(ctx.guild.id, [])
 
         if not queue:
@@ -261,14 +264,14 @@ def register_music_commands(bot: commands.Bot):
 
         await ctx.send(queue_message)
 
-    @bot.command()
-    async def clear(ctx):
+    @commands.command()
+    async def clear(self, ctx):
         queue = guild_music_queues.get(ctx.guild.id, [])
         queue.clear()
         await ctx.send("▶️ 대기열 목록 초기화")
 
-    @bot.command(name="help")
-    async def custom_help(ctx):
+    @commands.command(name="help")
+    async def custom_help(self, ctx):
         await ctx.send("[명령어 도움말]\n\n")
         await ctx.send("🔵 **!play** <검색어/유튜브 링크> : 요청한 노래를 즉시 재생합니다.\n(재생 중이던 노래가 있을 경우 다시 대기열에 넣습니다.)\n\n" +
                        "🔵 **!play --add** <검색어/유튜브 링크> : 요청한 노래를 대기열 리스트에 추가합니다.\n(현재 재생 중인 노래를 유지합니다.)\n\n" +
@@ -277,3 +280,7 @@ def register_music_commands(bot: commands.Bot):
                        "🟢 **!resume** : 대기열 리스트를 기준으로 노래를 다시 재생합니다.\n\n" +
                        "🟣 **!queue** : 대기열 리스트를 확인합니다.\n\n" +
                        "🟣 **!clear** : 대기열 리스트를 초기화합니다.(리스트의 노래를 모두 삭제합니다.)\n\n")
+
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(MusicCog(bot))
