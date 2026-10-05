@@ -41,3 +41,6 @@ model: haiku
 ## Style Guide
 - PR 제목/본문은 저장소 컨벤션에 맞춰 한국어로 작성합니다.
 - 응답은 간결하게 유지합니다(불필요한 설명 금지).
+
+## PR Description Formatting Rules
+- Pull Request 생성/수정 시 (`gh pr create`, `gh pr edit`), Description 하단에 Session Link나 Automated Signature(예: `https://claude.ai/code/session_...`)를 절대 포함하지 않습니다.
