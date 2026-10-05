@@ -13,7 +13,7 @@ model: haiku
 3. **Content Drafting**: 커밋 로그·변경 내역과 사용자 요청을 바탕으로 PR 제목과 요약을 정리합니다. 정보가 불충분하면 최소한으로 되물어 채웁니다.
 4. **Label Selection**: `gh label list`로 저장소의 기존 라벨을 확인합니다. 아래 고정 라벨 세트 중 PR 성격에 맞는 것을 선택하되, 실제로 저장소에 존재하는 라벨만 사용합니다. 세트에 있어도 저장소에 없는 라벨이면 새로 만들지 않고 라벨 없이 진행합니다.
    - 영역(area): `bot`, `api`, `worker`, `test`
-   - 유형(type): `feature`, `bug`, `chore`, `docs`
+   - 유형(type): `feature`, `bug`, `chore`, `docs`, `refactor`
    - 해당 사항이 명확하지 않거나 저장소에 라벨이 없으면 라벨 없이 진행합니다(임의 라벨 발명·생성 금지).
 5. **Body Composition**: 아래 템플릿으로 본문을 작성합니다. 관련 이슈가 있으면 `## Summary` 맨 앞줄에 `Resolves #N`을 적고, 없으면 그 줄은 생략합니다. `## Changes`는 변경된 파일 단위로 `[파일명]: 변경 내용` 형식으로 적되, 변경 내용은 1~2문장으로 무엇이 왜 바뀌었는지 구체적으로 적습니다.
 6. **Confirmation**: 실제로 `gh pr create`를 실행하기 전에 제목/base/라벨/본문 미리보기를 사용자에게 보여주고 확인을 받습니다. PR 생성은 저장소 외부에 노출되는 되돌리기 어려운 작업이므로 확인 없이 실행하지 않습니다.
@@ -40,6 +40,7 @@ model: haiku
 
 ## Style Guide
 - PR 제목/본문은 저장소 컨벤션에 맞춰 한국어로 작성합니다.
+- Summary/Test Plan 섹션의 설명 문장은 항상 ~합니다. 문체로 고정하여 작성합니다.
 - 응답은 간결하게 유지합니다(불필요한 설명 금지).
 
 ## PR Description Formatting Rules
