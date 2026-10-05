@@ -1,6 +1,11 @@
+import logging
+
 from discord.ext import commands
 from discord.ext.commands import CommandNotFound
 from .music import VideoTooLongError
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def setup_error_handlers(bot):
     @bot.event
@@ -13,7 +18,7 @@ def setup_error_handlers(bot):
                 await ctx.send(f"❌ 해당 영상({original.duration // 60}분)은 너무 깁니다.")
             else:
                 await ctx.send("⚠️ 오류가 발생했습니다.")
-                raise error
+                logger.error("명령어 처리 중 예외 발생", exc_info=original)
         else:
             await ctx.send("⚠️ 오류가 발생했습니다.")
-            raise error
+            logger.error("명령어 처리 중 예외 발생", exc_info=error)

@@ -121,6 +121,7 @@ def after_playing(bot: commands.Bot, guild: discord.Guild, member: discord.Membe
         
         queue = guild_music_queues.get(guild.id, [])
         if not queue:
+            guild_music_queues.pop(guild.id, None)
             target_channel = ctx if ctx else member.voice.channel
             try:
                 await target_channel.send("❌ 빈 대기열입니다. 재생을 종료합니다.")
@@ -137,6 +138,13 @@ def after_playing(bot: commands.Bot, guild: discord.Guild, member: discord.Membe
 async def play_music(bot: commands.Bot, guild: discord.Guild, member: discord.Member, ctx: commands.Context=None, *, is_refresh: bool):
 
     member_voice_channel=member.voice.channel
+
+    permissions = member_voice_channel.permissions_for(guild.me)
+    if not permissions.connect or not permissions.speak:
+        target_channel = ctx if ctx else member_voice_channel
+        await target_channel.send("⛔ 해당 음성 채널에 연결 권한이 없습니다.")
+        return
+
     voice_client = discord.utils.get(bot.voice_clients, guild=guild)
 
     if voice_client and voice_client.is_connected():
@@ -240,7 +248,7 @@ class MusicCog(commands.Cog):
             await ctx.send("🎶 이미 노래를 재생 중입니다.")
             return
 
-        if not guild_music_queues.get(ctx.guild.id) or len(guild_music_queues) == 0:
+        if not guild_music_queues.get(ctx.guild.id):
             await ctx.send("❌ 빈 대기열입니다.")
             return
 
@@ -266,8 +274,7 @@ class MusicCog(commands.Cog):
 
     @commands.command()
     async def clear(self, ctx):
-        queue = guild_music_queues.get(ctx.guild.id, [])
-        queue.clear()
+        guild_music_queues.pop(ctx.guild.id, None)
         await ctx.send("▶️ 대기열 목록 초기화")
 
     @commands.command(name="help")
@@ -280,7 +287,3 @@ class MusicCog(commands.Cog):
                        "🟢 **!resume** : 대기열 리스트를 기준으로 노래를 다시 재생합니다.\n\n" +
                        "🟣 **!queue** : 대기열 리스트를 확인합니다.\n\n" +
                        "🟣 **!clear** : 대기열 리스트를 초기화합니다.(리스트의 노래를 모두 삭제합니다.)\n\n")
-
-
-async def setup(bot: commands.Bot):
-    await bot.add_cog(MusicCog(bot))
