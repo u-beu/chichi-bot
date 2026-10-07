@@ -3,6 +3,7 @@ import json
 import logging
 
 import redis
+import redis.asyncio as redis_asyncio
 
 from api.config import BOT_QUEUE_KEY, REDIS_URL
 from api.publisher import ACTION_PLAYBACK
@@ -39,12 +40,12 @@ async def _process_command(bot, payload: str):
 
 
 async def _subscriber_loop(bot):
-    client = redis.from_url(REDIS_URL, decode_responses=True)
+    client = redis_asyncio.from_url(REDIS_URL, decode_responses=True)
     logger.info(f"레디스 구독 시작(queue={BOT_QUEUE_KEY})")
 
     while True:
         try:
-            result = await asyncio.to_thread(client.brpop, BOT_QUEUE_KEY, 0)
+            result = await client.brpop(BOT_QUEUE_KEY, 0)
             if not result:
                 continue
             _, payload = result
