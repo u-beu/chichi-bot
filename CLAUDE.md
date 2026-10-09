@@ -1,23 +1,26 @@
 # chichi-bot Root Guidelines
 
 ## Tech Stack
-- Python 3.10+, Discord.py, FastAPI, PyTorch, Librosa, aiohttp
+- Python 3.10+, Discord.py, PyTorch, Librosa, aiohttp
 
 ## Common Commands
 - Run Bot: `python -m bot.main`
-- Run API: `uvicorn api.main:app --reload --port 8000`
 - Run Worker: `python -m worker.main`
 - Run All Tests: `pytest`
-- Run Module Test: `pytest tests/api/`
 
 ## Project Structure
 - `bot/`: 사용자 명령 처리 및 Audio Playback을 담당하는 Discord bot.
-- `api/`: 경량화된 FastAPI 관리 서버.
 - `worker/`: Audio Analysis를 위한 PyTorch 기반 AI Inference Engine.
-- Unit/Integration Test는 프로젝트 구조와 일치하도록 `tests/` 디렉터리 하위에 위치시킬 것 (예: `tests/api/`, `tests/worker/`).
+- Unit/Integration Test는 프로젝트 구조와 일치하도록 `tests/` 디렉터리 하위에 위치시킬 것 (예: `tests/worker/`).
 
 ## Core Architecture Rules
-- **Shared Session:** Bot Runtime 전체에서 단일 Shared `aiohttp.ClientSession`을 유지할 것. HTTP Request마다 새로운 Session 생성 금지.
+- **Redis-based Asynchronous Messaging:**
+  - Spring Boot와 `chichi-bot` 간의 모든 작업 요청, 상태 변경, 메타데이터 전달은 Redis(Queue/ZSet/PubSub)를 단일 메시지 버스로 하여 비동기(`async/await`)로 처리합니다.
+  - `bot/`과 `worker/`는 직접 통신하지 않으며, 각각 독립적으로 Spring Boot와 데이터를 주고받습니다.
+- **Submodule Data Flow:**
+  - `worker/`: 음원 분석 요청 수신 -> PyTorch/Librosa 분석 -> 분석 결과 반환
+  - `bot/`: 재생 제어 명령 수신 -> Discord 재생 및 메타데이터 수집 -> 재생 상태 및 메타데이터 반환
+- **Shared Session:** Bot Runtime 전체(유튜브 메타데이터 조회, 외부 이미지/음원 다운로드 등)에서 단일 Shared `aiohttp.ClientSession`을 유지할 것. HTTP Request마다 새로운 Session 생성 금지.
 - **Async & Non-blocking:** 모든 I/O Operation은 Non-blocking (`async/await`)으로 처리할 것. CPU-bound 연산 작업은 Worker Process로 Offload할 것.
 - **Memory Management:** 8GB RAM 환경을 고려하여 모든 Sub-module 전반에 걸쳐 Memory 경계를 엄격히 준수할 것.
 - **Keep It Simple (KISS Principle):**
