@@ -1,16 +1,19 @@
 import asyncio
 import json
 import logging
+import os
 
 import redis
 import redis.asyncio as redis_asyncio
 
-from api.config import BOT_QUEUE_KEY, REDIS_URL
-from api.publisher import ACTION_PLAYBACK
 from bot.music import handle_api_playback
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+BOT_QUEUE_KEY = os.getenv("BOT_QUEUE_KEY", "bot:commands")
+ACTION_PLAYBACK = "playback"
 
 
 _subscriber_task = None
