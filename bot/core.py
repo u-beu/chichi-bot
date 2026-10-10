@@ -1,6 +1,7 @@
 import logging
-import aiohttp
+import os
 import discord
+import redis.asyncio as redis_asyncio
 from discord.ext import commands
 from .error_handler import setup_error_handlers
 from .music import MusicCog
@@ -9,6 +10,8 @@ from .subscriber import start_subscriber
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -16,15 +19,15 @@ intents.message_content = True
 class ChichiBot(commands.Bot):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.http_session: aiohttp.ClientSession | None = None
+        self.redis_client: redis_asyncio.Redis | None = None
 
     async def setup_hook(self):
-        self.http_session = aiohttp.ClientSession()
+        self.redis_client = redis_asyncio.from_url(REDIS_URL, decode_responses=True)
         await self.add_cog(MusicCog(self))
 
     async def close(self):
-        if self.http_session:
-            await self.http_session.close()
+        if self.redis_client:
+            await self.redis_client.aclose()
         await super().close()
 
 

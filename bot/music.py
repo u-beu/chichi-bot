@@ -1,13 +1,15 @@
 import asyncio
+import json
 import logging
+import os
 import discord
 import yt_dlp
-import aiohttp
 from discord.ext import commands
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+SPRING_QUEUE_KEY = os.getenv("SPRING_QUEUE_KEY", "spring:play-history")
 MAX_DURATION = 7200
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
@@ -68,8 +70,7 @@ async def get_info_async(ctx: commands.Context, query: str, *, is_url: bool = Fa
     return await loop.run_in_executor(None, lambda: get_song_info(query, from_url=is_url))
 
 
-async def send_play_history(song: dict, discord_id: int, session: aiohttp.ClientSession):
-    url = "https://ub-chichi.site/api/bot/recent-played-song"
+async def send_play_history(song: dict, discord_id: int, redis_client):
     data = {
         "title": song.get('title', 'Unknown Title'),
         "uploader": song.get('uploader', 'Unknown Uploader'),
@@ -79,11 +80,8 @@ async def send_play_history(song: dict, discord_id: int, session: aiohttp.Client
     }
 
     try:
-        async with session.post(url, json=data) as response:
-            if response.status == 200:
-                logger.info(f"API 전송 성공: {song['title']}")
-            else:
-                logger.info(f"API 전송 실패: {response.status}")
+        await redis_client.lpush(SPRING_QUEUE_KEY, json.dumps(data))
+        logger.info(f"Redis 전송 성공: {song['title']}")
     except Exception as e:
         logger.exception("예외 발생: %s", e)
 
@@ -165,7 +163,7 @@ async def play_music(bot: commands.Bot, guild: discord.Guild, member: discord.Me
         except Exception as e:
             logger.exception("예외 발생: 음원 정보 갱신 실패: %s", e)
 
-    asyncio.create_task(send_play_history(song, member.id, bot.http_session))
+    asyncio.create_task(send_play_history(song, member.id, bot.redis_client))
     source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(song['source'], **FFMPEG_OPTIONS))
 
     voice_client.play(source, after=lambda e: after_playing(bot, guild, member, ctx, e))
