@@ -5,5 +5,8 @@ python-dotenv
 pynacl
 aiohttp
 redis
+torch
+librosa
+numpy<2.0.0
 pytest
 pytest-asyncio
