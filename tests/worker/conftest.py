@@ -13,6 +13,6 @@ def mock_ydl():
 
 
 @pytest.fixture
-def sample_mfcc() -> np.ndarray:
-    """(40, 100) 형태의 더미 float32 MFCC 배열."""
-    return np.zeros((40, 100), dtype=np.float32)
+def sample_features() -> np.ndarray:
+    """(1024, 128) 형태의 더미 float32 AST 입력 특징 배열."""
+    return np.zeros((1024, 128), dtype=np.float32)
