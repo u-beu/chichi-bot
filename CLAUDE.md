@@ -9,49 +9,52 @@
 - Run All Tests: `pytest`
 
 ## Project Structure
-- `bot/`: 사용자 명령 처리 및 Audio Playback을 담당하는 Discord bot.
-- `worker/`: Audio Analysis를 위한 PyTorch 기반 AI Inference Engine.
-- Unit/Integration Test는 프로젝트 구조와 일치하도록 `tests/` 디렉터리 하위에 위치시킬 것 (예: `tests/worker/`).
+- `bot/`: 사용자 명령 처리 및 Audio Playback을 담당하는 Discord bot
+- `worker/`: Audio Analysis를 위한 PyTorch 기반 AI Inference Engine
+- `tests/`: 프로젝트 구조와 일치하는 위치에 Unit/Integration Test 배치 (예: `tests/worker/`)
 
 ## Core Architecture Rules
 - **Redis-based Asynchronous Messaging:**
-  - Spring Boot와 `chichi-bot` 간의 모든 작업 요청, 상태 변경, 메타데이터 전달은 Redis(Queue/ZSet/PubSub)를 단일 메시지 버스로 하여 비동기(`async/await`)로 처리합니다.
-  - `bot/`과 `worker/`는 직접 통신하지 않으며, 각각 독립적으로 Spring Boot와 데이터를 주고받습니다.
+  - Spring Boot - `chichi-bot` 간 모든 작업 요청, 상태 변경, 메타데이터 전달은 Redis(Queue/ZSet/PubSub) 단일 메시지 버스로 비동기(`async/await`) 처리
+  - `bot/`과 `worker/` 간 직접 통신 금지 (각각 독립적으로 Spring Boot와 데이터 송수신)
 - **Submodule Data Flow:**
-  - `worker/`: 음원 분석 요청 수신 -> PyTorch/Librosa 분석 -> 분석 결과 반환
-  - `bot/`: 재생 제어 명령 수신 -> Discord 재생 및 메타데이터 수집 -> 재생 상태 및 메타데이터 반환
-- **Shared Session:** Bot Runtime 전체(유튜브 메타데이터 조회, 외부 이미지/음원 다운로드 등)에서 단일 Shared `aiohttp.ClientSession`을 유지할 것. HTTP Request마다 새로운 Session 생성 금지.
-- **Async & Non-blocking:** 모든 I/O Operation은 Non-blocking (`async/await`)으로 처리할 것. CPU-bound 연산 작업은 Worker Process로 Offload할 것.
-- **Memory Management:** 8GB RAM 환경을 고려하여 모든 Sub-module 전반에 걸쳐 Memory 경계를 엄격히 준수할 것.
+  - `bot/`:
+    - 웹 UI/디스코드 채팅 재생 요청 수신 -> 디스코드 채널 음원 재생
+    - 재생 음원 데이터(제목, 가수, URL, 썸네일) 메시지를 Redis Queue로 발행
+  - `worker/`:
+    - Spring Boot(`chichi`)의 음원 분석 요청 수신 -> PyTorch/Librosa 분석 수행
+    - 분석 완료 데이터 메시지를 Redis Queue로 발행
+- **Shared Session:** Bot Runtime 전체에서 단일 Shared `aiohttp.ClientSession` 유지 (HTTP Request마다 신규 Session 생성 금지)
+- **Async & Non-blocking:** 모든 I/O Operation은 Non-blocking (`async/await`) 처리. CPU-bound 연산 작업은 Worker Process로 Offload
+- **Memory Management:** 8GB RAM 환경을 고려하여 모든 Sub-module 전반에 걸쳐 엄격한 메모리 경계 준수
 - **Keep It Simple (KISS Principle):**
-  1. **No Extra Features:** 요청받은 기능 외의 추가 기능을 구현하지 말 것.
-  2. **No Over-Abstraction:** 일회성/단발성 코드에는 추상화(Abstraction)를 적용하지 말 것.
-  3. **No Unrequested Flexibility:** 요청하지 않은 유연성이나 설정 가능성을 미리 추가하지 말 것.
-  4. **No Defensive Over-Engineering:** 불가능한 시나리오에 대한 과도한 예외 처리를 지양할 것 (단, Memory/Network I/O 안정성 관련 처리는 제외).
-  5. **Self-Review for Complexity:** 작성 전/후 스스로 *"시니어 개발자가 봤을 때 지나치게 복잡한가?"* 검토하고, 그렇다면 단순하게 다시 작성할 것.
+  1. **No Extra Features:** 요청받은 기능 외 추가 구현 금지
+  2. **No Over-Abstraction:** 일회성/단발성 코드에 추상화(Abstraction) 적용 금지
+  3. **No Unrequested Flexibility:** 요청하지 않은 유연성이나 설정 가능성 추가 금지
+  4. **No Defensive Over-Engineering:** 불가능한 시나리오에 대한 과도한 예외 처리 지양 (단, Memory/Network I/O 안정성 관련 처리는 제외)
+  5. **Self-Review for Complexity:** 작성 전/후 스스로 *"시니어 개발자가 봤을 때 지나치게 복잡한가?"* 검토 후 단순하게 재작성
 
 ## Workflow Rules
-- **Plan Mode & Approval:** 항상 Plan Mode로 작동할 것. 코드 변경 전 반드시 Plan을 제시하고 명시적 승인(Explicit User Approval)을 먼저 얻을 것.
+- **Plan Mode & Approval:** 항상 Plan Mode로 동작. 코드 변경 전 Plan 제시 및 명시적 사용자 승인(Explicit User Approval) 필수
 - **Clarity & Communication Rules:**
-  1. **Clarify Assumptions:** 가정한 내용을 명확히 밝히고, 확실하지 않다면 사용자에게 질문할 것.
-  2. **Present Options:** 여러 해석이 가능하면 임의 선택하지 말고 모든 가능성/대안을 제시할 것.
-  3. **Suggest Simpler Solutions:** 더 간단한 방법이 있다면 언급하고, 필요시 적극적으로 반박/제안할 것.
-  4. **Stop on Uncertainty:** 이해가 되지 않거나 애매한 부분은 즉시 작업을 멈추고 헷갈리는 요소를 질문할 것.
+  1. **Clarify Assumptions:** 가정사항을 명확히 밝히고, 불확실한 부분은 사용자에게 질문
+  2. **Present Options:** 여러 해석이 가능할 경우 임의 선택 없이 모든 가능성/대안 제시
+  3. **Suggest Simpler Solutions:** 더 간단한 방안 언급 및 필요시 적극적인 반박/제안
+  4. **Stop on Uncertainty:** 모호하거나 이해가 되지 않는 지점은 즉시 작업 중단 후 질문
 - **Code Editing Scope Rules:**
-  1. **No Unrelated Formatting:** 요청 범위 주변의 인접 코드, 주석, 서식을 임의로 개선하거나 다듬지 말 것.
-  2. **No Unrequested Refactoring:** 멀쩡히 동작하는 기존 코드를 임의로 리팩토링하지 말 것.
-  3. **Match Existing Style:** 해당 파일의 기존 코드 스타일을 엄격히 준수할 것.
-  4. **Report Unused Code:** 사용되지 않거나 관련 없는 코드를 발견하더라도 직접 삭제하지 말고 사용자에게 보고만 할 것.
+  1. **No Unrelated Formatting:** 요청 범위 주변의 인접 코드, 주석, 서식 임의 수정 금지
+  2. **No Unrequested Refactoring:** 정상 동작하는 기존 코드의 임의 리팩토링 금지
+  3. **Match Existing Style:** 대상 파일의 기존 코드 스타일 엄격히 준수
+  4. **Report Unused Code:** 미사용/불필요 코드 발견 시 직접 삭제하지 않고 사용자에게 보고
 - **Task Verification Rules:**
-  1. **Convert to Verifiable Goals:** 모든 과제는 검증 가능한 목표로 전환할 것.
+  1. **Convert to Verifiable Goals:** 모든 과제는 검증 가능한 목표로 전환
      - **유효성 검사 추가:** 유효하지 않은 입력에 대한 테스트 작성 및 통과 확인
-     - **버그 수정:** 버그 상황을 재현하는 테스트 작성 후 해당 테스트 통과 확인
-     - **리팩토링:** 리팩토링 전후 모두 기존 테스트가 정상 통과하는지 확인
-  2. **Step-by-Step Plan & Verification:** Multi-step 작업은 간략한 계획을 세우고, 매 단계마다 검증 후 진행할 것.
-  3. **Scope Verification:** 코드 작성 후 오직 요청한 사항만 수정되었는지 최종 확인할 것.
-- **Branching & Workflow:**
-  - 작업 시작 전 [docs/branching.md](docs/branching.md) 규칙(`/` 또는 `/-`)에 따라 새 Branch를 생성하고 이동할 것 (`main` 브랜치 직접 작업 금지).
+     - **버그 수정:** 버그 재현 테스트 작성 후 통과 확인
+     - **리팩토링:** 작업 전후 기존 테스트 정상 통과 확인
+  2. **Step-by-Step Plan & Verification:** Multi-step 작업은 간략한 계획 수립 후 단계별 검증 진행
+  3. **Scope Verification:** 코드 작성 후 오직 요청한 사항만 수정되었는지 최종 검증
+- **Branching & Workflow:** 작업 시작 전 [docs/branching.md](docs/branching.md) 규칙(`/` 또는 `/-`)에 따라 새 Branch 생성 및 이동 (`main` 브랜치 직접 작업 금지)
 
 ## Output Style
-- 서론/군더더기 없이 핵심 위주로 직관적이고 간결하게 답변할 것.
-- Always respond in Korean (한국어로 항상 답변할 것).
+- 서론/군더더기 없이 핵심 위주로 직관적이고 간결하게 답변
+- 한국어로 항상 답변
