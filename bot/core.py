@@ -5,7 +5,7 @@ import redis.asyncio as redis_asyncio
 from discord.ext import commands
 from .error_handler import setup_error_handlers
 from .music import MusicCog
-from .subscriber import start_subscriber
+from .subscriber import start_subscriber, stop_subscriber
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,6 +26,7 @@ class ChichiBot(commands.Bot):
         await self.add_cog(MusicCog(self))
 
     async def close(self):
+        await stop_subscriber()
         if self.redis_client:
             await self.redis_client.aclose()
         await super().close()

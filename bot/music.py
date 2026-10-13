@@ -104,7 +104,9 @@ async def handle_api_playback(bot: commands.Bot, guild_id: int, user_id: int, qu
     queue.insert(0, song)
 
     voice_client = discord.utils.get(bot.voice_clients, guild=guild)
-    if not voice_client:
+    if voice_client and voice_client.is_playing():
+        voice_client.stop()
+    else:
         await play_music(bot, guild, member, is_refresh=False)
 
 
@@ -117,6 +119,11 @@ def after_playing(bot: commands.Bot, guild: discord.Guild, member: discord.Membe
         if not voice_client or not voice_client.is_connected():
             return 
         
+        if not member.voice or not member.voice.channel:
+            guild_music_queues.pop(guild.id, None)
+            await voice_client.disconnect()
+            return
+
         queue = guild_music_queues.get(guild.id, [])
         if not queue:
             guild_music_queues.pop(guild.id, None)

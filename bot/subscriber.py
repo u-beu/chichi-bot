@@ -4,14 +4,12 @@ import logging
 import os
 
 import redis
-import redis.asyncio as redis_asyncio
 
 from bot.music import handle_api_playback
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 BOT_QUEUE_KEY = os.getenv("BOT_QUEUE_KEY", "bot:commands")
 ACTION_PLAYBACK = "playback"
 
@@ -43,7 +41,7 @@ async def _process_command(bot, payload: str):
 
 
 async def _subscriber_loop(bot):
-    client = redis_asyncio.from_url(REDIS_URL, decode_responses=True)
+    client = bot.redis_client
     logger.info(f"레디스 구독 시작(queue={BOT_QUEUE_KEY})")
 
     while True:
@@ -68,3 +66,14 @@ def start_subscriber(bot):
     if _subscriber_task is not None and not _subscriber_task.done():
         return
     _subscriber_task = bot.loop.create_task(_subscriber_loop(bot))
+
+
+async def stop_subscriber():
+    global _subscriber_task
+    if _subscriber_task is not None and not _subscriber_task.done():
+        _subscriber_task.cancel()
+        try:
+            await _subscriber_task
+        except asyncio.CancelledError:
+            pass
+    _subscriber_task = None

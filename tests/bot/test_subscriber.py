@@ -6,7 +6,7 @@ import redis
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import bot.subscriber as subscriber_module
-from bot.subscriber import _process_command, _subscriber_loop, start_subscriber
+from bot.subscriber import _process_command, _subscriber_loop, start_subscriber, stop_subscriber
 
 
 @pytest.fixture(autouse=True)
@@ -79,8 +79,9 @@ class TestSubscriberLoop:
         fake_client = MagicMock()
         fake_client.brpop = AsyncMock(side_effect=[("bot:commands", "payload"), asyncio.CancelledError()])
 
-        with patch("bot.subscriber.redis_asyncio.from_url", return_value=fake_client), \
-                patch("bot.subscriber._process_command", new_callable=AsyncMock) as mock_process:
+        bot.redis_client = fake_client
+
+        with patch("bot.subscriber._process_command", new_callable=AsyncMock) as mock_process:
             with pytest.raises(asyncio.CancelledError):
                 await _subscriber_loop(bot)
 
@@ -98,8 +99,9 @@ class TestSubscriberLoop:
         fake_client = MagicMock()
         fake_client.brpop = AsyncMock(side_effect=[None, asyncio.CancelledError()])
 
-        with patch("bot.subscriber.redis_asyncio.from_url", return_value=fake_client), \
-                patch("bot.subscriber._process_command", new_callable=AsyncMock) as mock_process:
+        bot.redis_client = fake_client
+
+        with patch("bot.subscriber._process_command", new_callable=AsyncMock) as mock_process:
             with pytest.raises(asyncio.CancelledError):
                 await _subscriber_loop(bot)
 
@@ -117,8 +119,9 @@ class TestSubscriberLoop:
         fake_client = MagicMock()
         fake_client.brpop = AsyncMock(side_effect=[redis.RedisError("boom"), asyncio.CancelledError()])
 
-        with patch("bot.subscriber.redis_asyncio.from_url", return_value=fake_client), \
-                patch("bot.subscriber.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        bot.redis_client = fake_client
+
+        with patch("bot.subscriber.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
             with pytest.raises(asyncio.CancelledError):
                 await _subscriber_loop(bot)
 
@@ -135,9 +138,10 @@ class TestSubscriberLoop:
         fake_client = MagicMock()
         fake_client.brpop = AsyncMock(side_effect=[Exception("boom"), asyncio.CancelledError()])
 
-        with patch("bot.subscriber.redis_asyncio.from_url", return_value=fake_client):
-            with pytest.raises(asyncio.CancelledError):
-                await _subscriber_loop(bot)
+        bot.redis_client = fake_client
+
+        with pytest.raises(asyncio.CancelledError):
+            await _subscriber_loop(bot)
 
 
 class TestStartSubscriber:
@@ -201,3 +205,32 @@ class TestStartSubscriber:
 
         bot.loop.create_task.assert_called_once()
         assert subscriber_module._subscriber_task is new_task
+
+
+class TestStopSubscriber:
+    @pytest.mark.asyncio
+    async def test_cancels_running_task(self):
+        """[목적] 실행 중인 구독 태스크를 취소하고 참조를 비우는지 검증
+
+        [검증]
+        1. 태스크가 cancelled 상태가 됨
+        2. 모듈의 _subscriber_task가 None으로 초기화됨
+        """
+        task = asyncio.create_task(asyncio.sleep(10))
+        subscriber_module._subscriber_task = task
+
+        await stop_subscriber()
+
+        assert task.cancelled()
+        assert subscriber_module._subscriber_task is None
+
+    @pytest.mark.asyncio
+    async def test_noop_when_no_task(self):
+        """[목적] 구독 태스크가 없을 때 예외 없이 넘어가는지 검증
+
+        [검증]
+        1. 예외 없이 완료되고 _subscriber_task는 None 유지
+        """
+        await stop_subscriber()
+
+        assert subscriber_module._subscriber_task is None
