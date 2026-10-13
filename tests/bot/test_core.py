@@ -50,15 +50,17 @@ class TestChichiBot:
         [검증]
         1. redis_client가 설정되어 있으면 redis_client.aclose가 호출됨
         2. redis_client가 없으면 aclose 호출 없이 넘어감
-        3. 두 경우 모두 부모 클래스의 close가 호출됨
+        3. 두 경우 모두 구독 태스크 정리(stop_subscriber)와 부모 클래스의 close가 호출됨
         """
         bot = _make_bot()
         fake_redis_client = AsyncMock() if has_redis_client else None
         bot.redis_client = fake_redis_client
 
-        with patch.object(commands.Bot, "close", new_callable=AsyncMock) as mock_super_close:
+        with patch.object(commands.Bot, "close", new_callable=AsyncMock) as mock_super_close, \
+                patch("bot.core.stop_subscriber", new_callable=AsyncMock) as mock_stop:
             await bot.close()
 
+        mock_stop.assert_called_once()
         if has_redis_client:
             fake_redis_client.aclose.assert_called_once()
         mock_super_close.assert_called_once()
