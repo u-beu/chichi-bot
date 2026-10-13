@@ -17,13 +17,13 @@ class TestAnalyzeVideo:
         4. 최종 결과에 videoId가 추가됨
         """
         with patch("worker.analyzer.get_audio_source_url", return_value="https://stream.example.com") as mock_source, \
-                patch("worker.analyzer.preprocess", return_value="mfcc-array") as mock_preprocess, \
+                patch("worker.analyzer.preprocess", return_value="features-array") as mock_preprocess, \
                 patch("worker.analyzer.run_inference", return_value={"genre": "pop", "mood": "happy"}) as mock_infer:
             result = analyze_video("abc123")
 
         mock_source.assert_called_once_with("abc123")
         mock_preprocess.assert_called_once_with("https://stream.example.com")
-        mock_infer.assert_called_once_with("mfcc-array")
+        mock_infer.assert_called_once_with("features-array")
         assert result == {"genre": "pop", "mood": "happy", "videoId": "abc123"}
 
     def test_propagates_audio_source_error(self):

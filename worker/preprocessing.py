@@ -3,13 +3,19 @@ import logging
 import audioread.ffdec
 import librosa
 import numpy as np
+from transformers import ASTFeatureExtractor
+
+from .model import MODEL_ID
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-TARGET_SR = 22050
+TARGET_SR = 16000
 MAX_DURATION_SEC = 30
-N_MFCC = 40
+CHUNK_SEC = 10
+MIN_CHUNK_SEC = 5
+
+_feature_extractor = None
 
 
 class AudioDecodingError(Exception):
@@ -31,13 +37,23 @@ def load_audio(source_url: str, *, duration: float = MAX_DURATION_SEC, sr: int =
     return y.astype(np.float32)
 
 
-def extract_mfcc(y: np.ndarray, *, sr: int = TARGET_SR, n_mfcc: int = N_MFCC) -> np.ndarray:
-    """로드된 파형에서 MFCC 특징(n_mfcc x time frames)을 추출."""
-    mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=n_mfcc)
-    return mfcc.astype(np.float32)
+def extract_features(y: np.ndarray, *, sr: int = TARGET_SR) -> np.ndarray:
+    """로드된 파형을 CHUNK_SEC초 단위로 나눠 조각별 AST 입력 특징(n_chunks x max_length x mel bins)을 추출.
+
+    마지막 조각이 MIN_CHUNK_SEC초 미만이면(첫 조각 제외) 대부분이 패딩이라 평균을 왜곡하므로 버린다.
+    """
+    global _feature_extractor
+    if _feature_extractor is None:
+        _feature_extractor = ASTFeatureExtractor.from_pretrained(MODEL_ID)
+    chunk_len = CHUNK_SEC * sr
+    chunks = [y[i:i + chunk_len] for i in range(0, len(y), chunk_len)]
+    if len(chunks) > 1 and len(chunks[-1]) < MIN_CHUNK_SEC * sr:
+        chunks.pop()
+    inputs = _feature_extractor(chunks, sampling_rate=sr, return_tensors="np")
+    return inputs["input_values"].astype(np.float32)
 
 
 def preprocess(source_url: str) -> np.ndarray:
-    """오디오 로드 + MFCC 추출을 한 번에 수행하는 전처리 파이프라인의 공개 엔트리포인트."""
+    """오디오 로드 + AST 특징 추출을 한 번에 수행하는 전처리 파이프라인의 공개 엔트리포인트."""
     y = load_audio(source_url)
-    return extract_mfcc(y)
+    return extract_features(y)

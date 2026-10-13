@@ -4,7 +4,7 @@
 - Python 3.10+, discord.py, redis-py (asyncio), ffmpeg, yt-dlp
 
 ## Common Commands
-- Run Bot: `python -m bot.main`
+- Run Bot: `python main.py`
 
 ## Development Rules
 - **Modular Structure:** `discord.ext.commands.Cog` 기반 명령어 및 이벤트 리스너 모듈화

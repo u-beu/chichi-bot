@@ -21,11 +21,11 @@ def analyze_video(video_id: str) -> dict:
         raise
 
     try:
-        mfcc = preprocess(source_url)
+        features = preprocess(source_url)
     except AudioDecodingError:
         logger.exception(f"예외 발생: 오디오 전처리 실패(네트워크/디코딩 오류) videoId={video_id}")
         raise
 
-    result = run_inference(mfcc)
+    result = run_inference(features)
     result["videoId"] = video_id
     return result

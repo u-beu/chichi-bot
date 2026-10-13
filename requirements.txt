@@ -1,4 +1,3 @@
-Flask
 yt-dlp
 discord
 python-dotenv
@@ -7,6 +6,7 @@ aiohttp
 redis
 torch
 librosa
+transformers
 numpy<2.0.0
 pytest
 pytest-asyncio
