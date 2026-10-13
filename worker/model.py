@@ -32,7 +32,7 @@ def get_device() -> torch.device:
 def get_model() -> ASTForAudioClassification:
     """지연 초기화된 전역 AST 사전학습 모델 싱글턴을 device에 올려서 반환.
 
-    TODO: 장시간 idle 상태를 감지해 모델을 언로드하는 로직 추가 필요 (프로세스 오프로드 단계에서 구현).
+    분석 전용 자식 프로세스 안에서 호출되며, idle 시 subscriber가 해당 프로세스를 종료해 모델을 언로드한다.
     """
     global _model
     if _model is None:
