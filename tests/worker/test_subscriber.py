@@ -70,22 +70,22 @@ class TestProcessRequest:
 
     @pytest.mark.asyncio
     async def test_analysis_failure_publishes_error_without_raising(self):
-        """[목적] 분석 실패 시 예외가 전파되지 않고 결과 큐에 error 메시지가 발행되는지 검증
+        """[목적] 분석 실패 시 예외가 전파되지 않고 결과 큐에 예외 클래스명이 error로 발행되는지 검증
 
         [검증]
         1. 예외가 밖으로 전파되지 않음
-        2. {"videoId", "error"}가 SPRING_ANALYSIS_QUEUE_KEY로 lpush됨
+        2. {"videoId", "error": 예외 클래스명}이 SPRING_ANALYSIS_QUEUE_KEY로 lpush됨 (예외 메시지는 포함되지 않음)
         """
         client = MagicMock()
         client.lpush = AsyncMock()
         payload = json.dumps({"videoId": "abc123"})
 
-        with patch("worker.subscriber.analyze_video", side_effect=Exception("분석 실패")):
+        with patch("worker.subscriber.analyze_video", side_effect=ValueError("https://stream.example.com/audio?sig=secret")):
             await _process_request(client, payload)
 
         client.lpush.assert_called_once_with(
             SPRING_ANALYSIS_QUEUE_KEY,
-            json.dumps({"videoId": "abc123", "error": "분석 실패"}),
+            json.dumps({"videoId": "abc123", "error": "ValueError"}),
         )
 
     @pytest.mark.asyncio

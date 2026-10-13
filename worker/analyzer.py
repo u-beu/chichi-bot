@@ -1,9 +1,5 @@
 import logging
 
-from .audio_source import AudioSourceError, get_audio_source_url
-from .inference import run_inference
-from .preprocessing import AudioDecodingError, preprocess
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -13,7 +9,12 @@ def analyze_video(video_id: str) -> dict:
 
     CPU-bound이므로 호출 측(subscriber)이 run_in_executor로 감싸 이벤트 루프 블로킹을 방지해야 함.
     실패 시 예외를 그대로 올리며(skip 여부 판단은 호출자 책임), 결과에는 videoId를 포함해 반환.
+    부모 프로세스가 torch/transformers/librosa를 상주시키지 않도록 아래 import는 분석 자식 프로세스에서 호출될 때 수행.
     """
+    from .audio_source import AudioSourceError, get_audio_source_url
+    from .inference import run_inference
+    from .preprocessing import AudioDecodingError, preprocess
+
     try:
         source_url = get_audio_source_url(video_id)
     except AudioSourceError:

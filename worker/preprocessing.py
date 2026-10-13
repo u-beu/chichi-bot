@@ -1,4 +1,5 @@
 import logging
+import re
 
 import audioread.ffdec
 import librosa
@@ -14,6 +15,7 @@ TARGET_SR = 16000
 MAX_DURATION_SEC = 30
 CHUNK_SEC = 10
 MIN_CHUNK_SEC = 5
+URL_PATTERN = re.compile(r"https?://\S+")
 
 _feature_extractor = None
 
@@ -33,7 +35,8 @@ def load_audio(source_url: str, *, duration: float = MAX_DURATION_SEC, sr: int =
         reader = audioread.ffdec.FFmpegAudioFile(source_url)
         y, _ = librosa.load(reader, duration=duration, sr=sr, mono=True)
     except Exception as e:
-        raise AudioDecodingError(f"오디오 로드 실패(네트워크 또는 디코딩 오류): {source_url}") from e
+        # 서명된 스트리밍 URL이 결과 큐/로그로 새지 않도록 메시지를 마스킹하고 원본 예외 체인은 끊는다.
+        raise AudioDecodingError(f"오디오 로드 실패(네트워크 또는 디코딩 오류): {URL_PATTERN.sub('<url>', str(e))}") from None
     return y.astype(np.float32)
 
 

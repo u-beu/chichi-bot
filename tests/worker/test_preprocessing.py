@@ -27,20 +27,25 @@ class TestLoadAudio:
         mock_load.assert_called_once_with(fake_reader, duration=30, sr=16000, mono=True)
         assert result.dtype == np.float32
 
-    def test_wraps_decoding_failure(self):
-        """[목적] librosa.load 실패(네트워크/디코딩 오류)가 AudioDecodingError로 래핑되는지 검증
+    def test_wraps_decoding_failure_with_masked_url(self):
+        """[목적] librosa.load 실패가 URL이 마스킹된 AudioDecodingError로 래핑되는지 검증
 
         [검증]
         1. AudioDecodingError가 발생함
-        2. 원본 예외가 체이닝됨(__cause__)
+        2. 메시지에 원본/소스 URL이 없고 <url>로 대체됨
+        3. 원본 예외 체인이 차단됨(__cause__ 없음, __suppress_context__)
         """
-        original = Exception("디코딩 실패")
+        original = Exception("디코딩 실패: https://stream.example.com/audio?sig=secret")
         with patch("worker.preprocessing.audioread.ffdec.FFmpegAudioFile", return_value=object()), \
                 patch("worker.preprocessing.librosa.load", side_effect=original):
             with pytest.raises(AudioDecodingError) as exc_info:
-                load_audio("https://stream.example.com/audio")
+                load_audio("https://stream.example.com/audio?sig=secret")
 
-        assert exc_info.value.__cause__ is original
+        assert "stream.example.com" not in str(exc_info.value)
+        assert "secret" not in str(exc_info.value)
+        assert "<url>" in str(exc_info.value)
+        assert exc_info.value.__cause__ is None
+        assert exc_info.value.__suppress_context__
 
 
 @pytest.fixture(autouse=True)
