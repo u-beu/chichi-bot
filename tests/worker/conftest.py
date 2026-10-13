@@ -14,5 +14,5 @@ def mock_ydl():
 
 @pytest.fixture
 def sample_features() -> np.ndarray:
-    """(1024, 128) 형태의 더미 float32 AST 입력 특징 배열."""
-    return np.zeros((1024, 128), dtype=np.float32)
+    """(3, 1024, 128) 형태의 더미 float32 AST 입력 특징 배열(10초 3조각)."""
+    return np.zeros((3, 1024, 128), dtype=np.float32)

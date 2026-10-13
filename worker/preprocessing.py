@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 TARGET_SR = 16000
 MAX_DURATION_SEC = 30
+CHUNK_SEC = 10
+MIN_CHUNK_SEC = 5
 
 _feature_extractor = None
 
@@ -36,12 +38,19 @@ def load_audio(source_url: str, *, duration: float = MAX_DURATION_SEC, sr: int =
 
 
 def extract_features(y: np.ndarray, *, sr: int = TARGET_SR) -> np.ndarray:
-    """로드된 파형에서 AST 입력 특징(max_length x mel bins)을 추출. 모델 max_length를 넘는 구간은 잘림."""
+    """로드된 파형을 CHUNK_SEC초 단위로 나눠 조각별 AST 입력 특징(n_chunks x max_length x mel bins)을 추출.
+
+    마지막 조각이 MIN_CHUNK_SEC초 미만이면(첫 조각 제외) 대부분이 패딩이라 평균을 왜곡하므로 버린다.
+    """
     global _feature_extractor
     if _feature_extractor is None:
         _feature_extractor = ASTFeatureExtractor.from_pretrained(MODEL_ID)
-    inputs = _feature_extractor(y, sampling_rate=sr, return_tensors="np")
-    return inputs["input_values"][0].astype(np.float32)
+    chunk_len = CHUNK_SEC * sr
+    chunks = [y[i:i + chunk_len] for i in range(0, len(y), chunk_len)]
+    if len(chunks) > 1 and len(chunks[-1]) < MIN_CHUNK_SEC * sr:
+        chunks.pop()
+    inputs = _feature_extractor(chunks, sampling_rate=sr, return_tensors="np")
+    return inputs["input_values"].astype(np.float32)
 
 
 def preprocess(source_url: str) -> np.ndarray:

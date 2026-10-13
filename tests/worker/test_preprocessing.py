@@ -50,24 +50,49 @@ def reset_feature_extractor():
     preprocessing_module._feature_extractor = None
 
 
+def _fake_extractor():
+    """입력 조각 개수만큼 (n, 1024, 128) 배열을 반환하는 feature extractor mock."""
+    return MagicMock(side_effect=lambda chunks, **kw: {"input_values": np.zeros((len(chunks), 1024, 128), dtype=np.float64)})
+
+
 class TestExtractFeatures:
-    def test_passes_expected_params_and_returns_float32(self):
-        """[목적] ASTFeatureExtractor가 16kHz로 호출되고 결과가 float32 2D 배열로 반환되는지 검증
+    def test_splits_30s_into_three_chunks_and_returns_float32(self):
+        """[목적] 30초 파형이 10초 3조각으로 나뉘어 16kHz로 추출되고 float32 3D 배열로 반환되는지 검증
 
         [검증]
         1. from_pretrained가 MODEL_ID로 호출됨
-        2. extractor가 sampling_rate=16000, return_tensors="np"로 호출됨
-        3. 반환 배열의 shape이 (time, mel)이고 dtype이 float32임
+        2. extractor가 길이 160000짜리 3개 조각 리스트와 sampling_rate=16000, return_tensors="np"로 호출됨
+        3. 반환 배열의 shape이 (3, 1024, 128)이고 dtype이 float32임
         """
-        y = np.zeros(1000, dtype=np.float32)
-        fake_extractor = MagicMock(return_value={"input_values": np.zeros((1, 1024, 128), dtype=np.float64)})
-        with patch("worker.preprocessing.ASTFeatureExtractor.from_pretrained", return_value=fake_extractor) as mock_load:
+        y = np.zeros(30 * 16000, dtype=np.float32)
+        extractor = _fake_extractor()
+        with patch("worker.preprocessing.ASTFeatureExtractor.from_pretrained", return_value=extractor) as mock_load:
             result = extract_features(y)
 
         mock_load.assert_called_once_with(preprocessing_module.MODEL_ID)
-        fake_extractor.assert_called_once_with(y, sampling_rate=16000, return_tensors="np")
-        assert result.shape == (1024, 128)
+        chunks = extractor.call_args.args[0]
+        assert [len(c) for c in chunks] == [160000, 160000, 160000]
+        assert extractor.call_args.kwargs == {"sampling_rate": 16000, "return_tensors": "np"}
+        assert result.shape == (3, 1024, 128)
         assert result.dtype == np.float32
+
+    @pytest.mark.parametrize(
+        "seconds, expected_chunk_lens",
+        [(3, [3 * 16000]), (10, [160000]), (14, [160000]), (15, [160000, 5 * 16000]), (25, [160000, 160000, 5 * 16000])],
+        ids=["shorter_than_chunk", "exactly_one_chunk", "drop_short_tail", "keep_tail_at_min", "keep_tail_two_and_half"],
+    )
+    def test_short_audio_chunking(self, seconds, expected_chunk_lens):
+        """[목적] 30초 미만 음원에서 첫 조각은 항상 유지하고 5초 미만 마지막 조각만 버리는지 검증
+
+        [검증]
+        1. extractor에 전달된 조각 길이가 기대값과 일치함
+        """
+        y = np.zeros(seconds * 16000, dtype=np.float32)
+        extractor = _fake_extractor()
+        with patch("worker.preprocessing.ASTFeatureExtractor.from_pretrained", return_value=extractor):
+            extract_features(y)
+
+        assert [len(c) for c in extractor.call_args.args[0]] == expected_chunk_lens
 
     def test_reuses_feature_extractor(self):
         """[목적] feature extractor가 지연 초기화 후 재사용되는지 검증
@@ -76,8 +101,7 @@ class TestExtractFeatures:
         1. 두 번 호출해도 from_pretrained는 한 번만 호출됨
         """
         y = np.zeros(1000, dtype=np.float32)
-        fake_extractor = MagicMock(return_value={"input_values": np.zeros((1, 1024, 128))})
-        with patch("worker.preprocessing.ASTFeatureExtractor.from_pretrained", return_value=fake_extractor) as mock_load:
+        with patch("worker.preprocessing.ASTFeatureExtractor.from_pretrained", return_value=_fake_extractor()) as mock_load:
             extract_features(y)
             extract_features(y)
 
@@ -93,7 +117,7 @@ class TestPreprocess:
         2. 최종 결과가 extract_features의 반환값과 동일함
         """
         fake_y = np.zeros(10, dtype=np.float32)
-        fake_features = np.zeros((1024, 128), dtype=np.float32)
+        fake_features = np.zeros((3, 1024, 128), dtype=np.float32)
         with patch("worker.preprocessing.load_audio", return_value=fake_y) as mock_load, \
                 patch("worker.preprocessing.extract_features", return_value=fake_features) as mock_extract:
             result = preprocess("https://stream.example.com/audio")

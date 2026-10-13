@@ -20,9 +20,9 @@ def _release_memory(device: torch.device) -> None:
 
 
 def run_inference(features: np.ndarray) -> dict:
-    """AST 입력 특징 np.ndarray(time x mel)를 받아 torch.no_grad() 범위 내에서 추론, genre/mood 딕셔너리로 반환.
+    """AST 입력 특징 np.ndarray(n_chunks x time x mel)를 받아 torch.no_grad() 범위 내에서 추론, genre/mood 딕셔너리로 반환.
 
-    527개 AudioSet logits 중 GENRE_LABELS/MOOD_LABELS 부분집합에 해당하는 logits만 골라 각각 argmax.
+    조각별 logits를 평균낸 뒤, 527개 AudioSet logits 중 GENRE_LABELS/MOOD_LABELS 부분집합에 해당하는 logits만 골라 각각 argmax.
     """
     model = get_model()
     device = get_device()
@@ -30,10 +30,10 @@ def run_inference(features: np.ndarray) -> dict:
     genre_ids = [label2id[label] for label in GENRE_LABELS]
     mood_ids = [label2id[label] for label in MOOD_LABELS]
 
-    input_values = torch.from_numpy(features).to(dtype=torch.float32).unsqueeze(0).to(device)
+    input_values = torch.from_numpy(features).to(dtype=torch.float32).to(device)
 
     with torch.no_grad():
-        logits = model(input_values=input_values).logits[0]
+        logits = model(input_values=input_values).logits.mean(dim=0)
         genre_idx = int(torch.argmax(logits[genre_ids]).item())
         mood_idx = int(torch.argmax(logits[mood_ids]).item())
 
