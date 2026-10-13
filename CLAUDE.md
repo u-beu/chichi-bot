@@ -4,7 +4,7 @@
 - Python 3.10+, Discord.py, PyTorch, Librosa, aiohttp
 
 ## Common Commands
-- Run Bot: `python -m bot.main`
+- Run Bot: `python main.py`
 - Run Worker: `python -m worker.main`
 - Run All Tests: `pytest`
 
