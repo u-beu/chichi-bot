@@ -65,7 +65,7 @@ async def _process_request(client: redis_asyncio.Redis, payload: str) -> None:
         logger.exception(f"예외 발생: 분석 실패, 실패 결과 전송 videoId={video_id}")
         if isinstance(e, BrokenProcessPool):
             _shutdown_executor()
-        result = {"videoId": video_id, "error": str(e)}
+        result = {"videoId": video_id, "error": type(e).__name__}
 
     await _publish(client, result)
 

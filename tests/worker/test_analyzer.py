@@ -46,3 +46,18 @@ class TestAnalyzeVideo:
                 patch("worker.analyzer.preprocess", side_effect=AudioDecodingError("boom")):
             with pytest.raises(AudioDecodingError):
                 analyze_video("abc123")
+
+    def test_decoding_failure_log_does_not_leak_stream_url(self, caplog):
+        """[목적] 디코딩 실패 로그(traceback 포함)에 스트리밍 URL이 남지 않는지 검증
+
+        [검증]
+        1. 원본 예외 메시지에 URL이 있어도 로그 전체에 URL/서명이 없음
+        """
+        url = "https://stream.example.com/audio?sig=secret"
+        with patch("worker.analyzer.get_audio_source_url", return_value=url), \
+                patch("worker.preprocessing.audioread.ffdec.FFmpegAudioFile", side_effect=Exception(f"ffmpeg 실패: {url}")):
+            with pytest.raises(AudioDecodingError):
+                analyze_video("abc123")
+
+        assert "stream.example.com" not in caplog.text
+        assert "secret" not in caplog.text
