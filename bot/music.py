@@ -117,6 +117,11 @@ def after_playing(bot: commands.Bot, guild: discord.Guild, member: discord.Membe
         if not voice_client or not voice_client.is_connected():
             return 
         
+        if not member.voice or not member.voice.channel:
+            guild_music_queues.pop(guild.id, None)
+            await voice_client.disconnect()
+            return
+
         queue = guild_music_queues.get(guild.id, [])
         if not queue:
             guild_music_queues.pop(guild.id, None)

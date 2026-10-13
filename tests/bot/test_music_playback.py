@@ -112,6 +112,31 @@ class TestAfterPlaying:
         mock_play_music.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_member_left_voice_clears_queue_and_disconnects(self, mock_bot, voice_client_factory):
+        """[목적] 재생 중 요청자가 음성 채널을 나가면 대기열을 비우고 연결을 종료하는지 검증
+
+        [검증]
+        1. guild_music_queues에서 해당 길드 큐가 제거됨
+        2. voice_client.disconnect가 호출됨
+        3. play_music이 호출되지 않음
+        """
+        guild = MagicMock(id=1)
+        member = MagicMock()
+        member.voice = None
+
+        voice_client = voice_client_factory(is_connected=True)
+
+        with patch("bot.music.guild_music_queues", {1: [{"title": "t"}]}) as mock_queues, \
+                patch("discord.utils.get", return_value=voice_client), \
+                patch("bot.music.play_music", new_callable=AsyncMock) as mock_play_music:
+            after_playing(mock_bot, guild, member)
+            await asyncio.sleep(0.01)
+
+        assert 1 not in mock_queues
+        voice_client.disconnect.assert_called_once()
+        mock_play_music.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_empty_queue_sends_message_and_disconnects(self, mock_bot, voice_client_factory):
         """[목적] 재생 후 대기열이 비어있으면 안내 메시지 전송 후 연결을 종료하는지 검증
 
