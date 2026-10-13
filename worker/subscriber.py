@@ -74,19 +74,23 @@ async def subscriber_loop() -> None:
     client = redis_asyncio.from_url(REDIS_URL, decode_responses=True)
     logger.info(f"레디스 구독 시작(queue={WORKER_QUEUE_KEY})")
 
-    while True:
-        try:
-            result = await client.brpop(WORKER_QUEUE_KEY, IDLE_UNLOAD_SEC)
-            if not result:
-                _shutdown_executor()
-                continue
-            _, payload = result
-            await _process_request(client, payload)
-        except asyncio.CancelledError:
-            logger.info("레디스 구독 중지")
-            raise
-        except redis.RedisError:
-            logger.exception("예외 발생: 레디스: 재시작 3초")
-            await asyncio.sleep(3)
-        except Exception:
-            logger.exception("예외 발생: 태스크 처리과정")
+    try:
+        while True:
+            try:
+                result = await client.brpop(WORKER_QUEUE_KEY, IDLE_UNLOAD_SEC)
+                if not result:
+                    _shutdown_executor()
+                    continue
+                _, payload = result
+                await _process_request(client, payload)
+            except asyncio.CancelledError:
+                logger.info("레디스 구독 중지")
+                raise
+            except redis.RedisError:
+                logger.exception("예외 발생: 레디스: 재시작 3초")
+                await asyncio.sleep(3)
+            except Exception:
+                logger.exception("예외 발생: 태스크 처리과정")
+    finally:
+        await client.aclose()
+        _shutdown_executor()

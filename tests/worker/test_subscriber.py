@@ -175,6 +175,7 @@ class TestSubscriberLoop:
         2. _process_request가 수신한 payload로 호출됨
         """
         fake_client = MagicMock()
+        fake_client.aclose = AsyncMock()
         fake_client.brpop = AsyncMock(
             side_effect=[("worker:analysis-requests", "payload"), asyncio.CancelledError()]
         )
@@ -192,10 +193,11 @@ class TestSubscriberLoop:
 
         [검증]
         1. brpop이 IDLE_UNLOAD_SEC 타임아웃으로 호출됨
-        2. _shutdown_executor가 호출됨
+        2. _shutdown_executor가 idle 처리와 종료 정리로 총 2회 호출됨
         3. CancelledError가 전파되고 _process_request는 호출되지 않음
         """
         fake_client = MagicMock()
+        fake_client.aclose = AsyncMock()
         fake_client.brpop = AsyncMock(side_effect=[None, asyncio.CancelledError()])
 
         with patch("worker.subscriber.redis_asyncio.from_url", return_value=fake_client), \
@@ -205,7 +207,7 @@ class TestSubscriberLoop:
                 await subscriber_loop()
 
         fake_client.brpop.assert_any_call("worker:analysis-requests", IDLE_UNLOAD_SEC)
-        mock_shutdown.assert_called_once()
+        assert mock_shutdown.call_count == 2
         mock_process.assert_not_called()
 
     @pytest.mark.asyncio
@@ -217,6 +219,7 @@ class TestSubscriberLoop:
         2. 이후 CancelledError로 루프가 종료됨
         """
         fake_client = MagicMock()
+        fake_client.aclose = AsyncMock()
         fake_client.brpop = AsyncMock(side_effect=[redis.RedisError("boom"), asyncio.CancelledError()])
 
         with patch("worker.subscriber.redis_asyncio.from_url", return_value=fake_client), \
@@ -234,8 +237,30 @@ class TestSubscriberLoop:
         1. 예외가 전파되지 않고 다음 반복(CancelledError)까지 루프가 유지됨
         """
         fake_client = MagicMock()
+        fake_client.aclose = AsyncMock()
         fake_client.brpop = AsyncMock(side_effect=[Exception("boom"), asyncio.CancelledError()])
 
         with patch("worker.subscriber.redis_asyncio.from_url", return_value=fake_client):
             with pytest.raises(asyncio.CancelledError):
                 await subscriber_loop()
+
+    @pytest.mark.asyncio
+    async def test_cleans_up_client_and_executor_on_cancel(self):
+        """[목적] 구독 루프가 취소돼도 Redis client와 분석 프로세스가 정리되는지 검증
+
+        [검증]
+        1. CancelledError가 전파됨
+        2. client.aclose()가 호출됨
+        3. _shutdown_executor가 호출됨
+        """
+        fake_client = MagicMock()
+        fake_client.aclose = AsyncMock()
+        fake_client.brpop = AsyncMock(side_effect=asyncio.CancelledError())
+
+        with patch("worker.subscriber.redis_asyncio.from_url", return_value=fake_client), \
+                patch("worker.subscriber._shutdown_executor") as mock_shutdown:
+            with pytest.raises(asyncio.CancelledError):
+                await subscriber_loop()
+
+        fake_client.aclose.assert_awaited_once()
+        mock_shutdown.assert_called_once()
