@@ -61,24 +61,28 @@ class TestHandleApiPlayback:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "existing_voice_client, expect_play_called",
-        [(False, True), (True, False)],
-        ids=["no_voice_client_starts_playback", "existing_voice_client_skips_play"],
+        "voice_client_state, expect_play_called, expect_stop_called",
+        [("none", True, False), ("playing", False, True), ("idle", True, False)],
+        ids=["no_voice_client_starts_playback", "playing_interrupts_with_stop", "idle_voice_client_starts_playback"],
     )
-    async def test_voice_client_presence_controls_play_music_call(
-        self, mock_bot, member_in_voice_channel, existing_voice_client, expect_play_called
+    async def test_voice_client_state_controls_playback(
+        self, mock_bot, member_in_voice_channel, voice_client_state, expect_play_called, expect_stop_called
     ):
-        """[목적] 길드에 연결된 voice_client 유무에 따라 play_music 호출 여부가 달라지는지 검증
+        """[목적] 길드 voice_client 상태에 따라 즉시 재생 방식이 달라지는지 검증
 
         [검증]
-        1. voice_client가 없으면 play_music이 is_refresh=False로 호출되고 조회한 song이 큐 맨 앞에 추가됨
-        2. voice_client가 이미 있으면 play_music이 호출되지 않음
+        1. 어떤 경우든 조회한 song이 큐 맨 앞에 추가됨
+        2. voice_client가 없거나 재생 중이 아니면 play_music이 is_refresh=False로 호출됨
+        3. 재생 중이면 voice_client.stop만 호출되고 play_music은 호출되지 않음
         """
         guild, member, _channel = member_in_voice_channel()
         mock_bot.get_guild.return_value = guild
         guild.get_member.return_value = member
 
-        voice_client = MagicMock() if existing_voice_client else None
+        voice_client = None
+        if voice_client_state != "none":
+            voice_client = MagicMock()
+            voice_client.is_playing.return_value = voice_client_state == "playing"
 
         with patch("bot.music.guild_music_queues", {}) as mock_queues, \
                 patch("bot.music.get_song_info", return_value={"title": "t", "video_id": "v"}), \
@@ -86,11 +90,13 @@ class TestHandleApiPlayback:
                 patch("bot.music.play_music", new_callable=AsyncMock) as mock_play_music:
             await handle_api_playback(mock_bot, 1, 2, "query")
 
+        assert mock_queues[1][0]["title"] == "t"
         if expect_play_called:
             mock_play_music.assert_called_once_with(mock_bot, guild, member, is_refresh=False)
-            assert mock_queues[1][0]["title"] == "t"
         else:
             mock_play_music.assert_not_called()
+        if expect_stop_called:
+            voice_client.stop.assert_called_once()
 
 
 class TestAfterPlaying:
