@@ -7,3 +7,6 @@ tests
 docs
 .env
 TODO.md
+.claude
+.claudeignore
+.github
