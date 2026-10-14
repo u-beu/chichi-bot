@@ -1,30 +1,37 @@
 # chichi-bot Root Guidelines
 
 ## Tech Stack
-- Python 3.10+, Discord.py, PyTorch, Librosa, aiohttp
+- Python 3.10+, Discord.py, PyTorch, Librosa
 
 ## Common Commands
 - Run Bot: `python main.py`
 - Run Worker: `python -m worker.main`
+- Install Test Dependencies: `pip install -r requirements-dev.txt`
 - Run All Tests: `pytest`
 
 ## Project Structure
 - `bot/`: 사용자 명령 처리 및 Audio Playback을 담당하는 Discord bot
 - `worker/`: Audio Analysis를 위한 PyTorch 기반 AI Inference Engine
 - `tests/`: 프로젝트 구조와 일치하는 위치에 Unit/Integration Test 배치 (예: `tests/worker/`)
+- `main.py`: bot 엔트리포인트 (`load_dotenv()` 후 `bot.core` import)
+- `docs/`: 브랜치 규칙(`branching.md`), ADR(`adr/`) 등 프로젝트 문서
+- `requirements-bot.txt` / `requirements-worker.txt` / `requirements-dev.txt`: 서브모듈별 의존성 및 테스트 의존성(두 파일 포함)
+
+## Environment Variables
+- `REDIS_URL`: bot/worker 공통 Redis 접속 URL (기본값 `redis://localhost:6379/0`)
+- 서브모듈별 변수는 [bot/CLAUDE.md](bot/CLAUDE.md), [worker/CLAUDE.md](worker/CLAUDE.md) 참조
 
 ## Core Architecture Rules
 - **Redis-based Asynchronous Messaging:**
-  - Spring Boot - `chichi-bot` 간 모든 작업 요청, 상태 변경, 메타데이터 전달은 Redis(Queue/ZSet/PubSub) 단일 메시지 버스로 비동기(`async/await`) 처리
+  - Spring Boot - `chichi-bot` 간 모든 작업 요청, 상태 변경, 메타데이터 전달은 Redis List(Queue) 단일 메시지 버스로 비동기(`async/await`) 처리
   - `bot/`과 `worker/` 간 직접 통신 금지 (각각 독립적으로 Spring Boot와 데이터 송수신)
 - **Submodule Data Flow:**
   - `bot/`:
     - 웹 UI/디스코드 채팅 재생 요청 수신 -> 디스코드 채널 음원 재생
-    - 재생 음원 데이터(제목, 가수, URL, 썸네일) 메시지를 Redis Queue로 발행
+    - 재생 음원 데이터(제목, 업로더, 썸네일, videoId, discordId) 메시지를 Redis Queue로 발행
   - `worker/`:
     - Spring Boot(`chichi`)의 음원 분석 요청 수신 -> PyTorch/Librosa 분석 수행
     - 분석 완료 데이터 메시지를 Redis Queue로 발행
-- **Shared Session:** Bot Runtime 전체에서 단일 Shared `aiohttp.ClientSession` 유지 (HTTP Request마다 신규 Session 생성 금지)
 - **Async & Non-blocking:** 모든 I/O Operation은 Non-blocking (`async/await`) 처리. CPU-bound 연산 작업은 Worker Process로 Offload
 - **Memory Management:** 8GB RAM 환경을 고려하여 모든 Sub-module 전반에 걸쳐 엄격한 메모리 경계 준수
 - **Keep It Simple (KISS Principle):**
@@ -53,7 +60,7 @@
      - **리팩토링:** 작업 전후 기존 테스트 정상 통과 확인
   2. **Step-by-Step Plan & Verification:** Multi-step 작업은 간략한 계획 수립 후 단계별 검증 진행
   3. **Scope Verification:** 코드 작성 후 오직 요청한 사항만 수정되었는지 최종 검증
-- **Branching & Workflow:** 작업 시작 전 [docs/branching.md](docs/branching.md) 규칙(`/` 또는 `/-`)에 따라 새 Branch 생성 및 이동 (`main` 브랜치 직접 작업 금지)
+- **Branching & Workflow:** 작업 시작 전 [docs/branching.md](docs/branching.md) 규칙(`<type>/<issue-number>-<description>`, 이슈가 없으면 `<type>/<description>`)에 따라 새 Branch 생성 및 이동 (`main` 브랜치 직접 작업 금지)
 
 ## Output Style
 - 서론/군더더기 없이 핵심 위주로 직관적이고 간결하게 답변
