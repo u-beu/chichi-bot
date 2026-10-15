@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 from concurrent.futures.process import BrokenProcessPool
 
 import pytest
@@ -9,8 +10,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import worker.subscriber as subscriber_module
 from worker.subscriber import (
     IDLE_UNLOAD_SEC,
+    RESULT_CACHE_KEY_PREFIX,
+    RESULT_CACHE_TTL_SEC,
     SPRING_ANALYSIS_QUEUE_KEY,
     _get_executor,
+    _kill_executor,
     _process_request,
     _shutdown_executor,
     subscriber_loop,
@@ -35,6 +39,8 @@ class TestProcessRequest:
         """
         client = MagicMock()
         client.lpush = AsyncMock()
+        client.get = AsyncMock(return_value=None)
+        client.set = AsyncMock()
         payload = json.dumps({"videoId": "abc123"})
 
         with patch("worker.subscriber.analyze_video", return_value={"videoId": "abc123", "genre": "pop", "mood": "happy"}) as mock_analyze:
@@ -61,6 +67,8 @@ class TestProcessRequest:
         """
         client = MagicMock()
         client.lpush = AsyncMock()
+        client.get = AsyncMock(return_value=None)
+        client.set = AsyncMock()
 
         with patch("worker.subscriber.analyze_video") as mock_analyze:
             await _process_request(client, payload)
@@ -78,6 +86,8 @@ class TestProcessRequest:
         """
         client = MagicMock()
         client.lpush = AsyncMock()
+        client.get = AsyncMock(return_value=None)
+        client.set = AsyncMock()
         payload = json.dumps({"videoId": "abc123"})
 
         with patch("worker.subscriber.analyze_video", side_effect=ValueError("https://stream.example.com/audio?sig=secret")):
@@ -98,6 +108,8 @@ class TestProcessRequest:
         """
         client = MagicMock()
         client.lpush = AsyncMock()
+        client.get = AsyncMock(return_value=None)
+        client.set = AsyncMock()
         payload = json.dumps({"videoId": "abc123"})
 
         with patch("worker.subscriber.analyze_video", side_effect=BrokenProcessPool("dead")), \
@@ -116,10 +128,122 @@ class TestProcessRequest:
         """
         client = MagicMock()
         client.lpush = AsyncMock(side_effect=redis.RedisError("boom"))
+        client.get = AsyncMock(return_value=None)
+        client.set = AsyncMock()
         payload = json.dumps({"videoId": "abc123"})
 
         with patch("worker.subscriber.analyze_video", return_value={"videoId": "abc123"}):
             await _process_request(client, payload)
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_republishes_without_analysis(self):
+        """[목적] 캐시된 결과가 있으면 분석 없이 캐시된 결과를 재발행하는지 검증
+
+        [검증]
+        1. analyze_video가 호출되지 않음
+        2. 캐시된 결과가 SPRING_ANALYSIS_QUEUE_KEY로 lpush됨
+        """
+        cached = {"videoId": "abc123", "genre": "pop", "mood": "happy"}
+        client = MagicMock()
+        client.lpush = AsyncMock()
+        client.get = AsyncMock(return_value=json.dumps(cached))
+        client.set = AsyncMock()
+        payload = json.dumps({"videoId": "abc123"})
+
+        with patch("worker.subscriber.analyze_video") as mock_analyze:
+            await _process_request(client, payload)
+
+        client.get.assert_called_once_with(f"{RESULT_CACHE_KEY_PREFIX}abc123")
+        mock_analyze.assert_not_called()
+        client.lpush.assert_called_once_with(SPRING_ANALYSIS_QUEUE_KEY, json.dumps(cached))
+
+    @pytest.mark.asyncio
+    async def test_success_result_is_cached_with_ttl(self):
+        """[목적] 분석 성공 결과가 TTL과 함께 캐시에 저장되는지 검증
+
+        [검증]
+        1. 결과가 RESULT_CACHE_TTL_SEC 만료로 set됨
+        """
+        result = {"videoId": "abc123", "genre": "pop", "mood": "happy"}
+        client = MagicMock()
+        client.lpush = AsyncMock()
+        client.get = AsyncMock(return_value=None)
+        client.set = AsyncMock()
+        payload = json.dumps({"videoId": "abc123"})
+
+        with patch("worker.subscriber.analyze_video", return_value=result):
+            await _process_request(client, payload)
+
+        client.set.assert_called_once_with(
+            f"{RESULT_CACHE_KEY_PREFIX}abc123", json.dumps(result), ex=RESULT_CACHE_TTL_SEC
+        )
+
+    @pytest.mark.asyncio
+    async def test_error_result_is_not_cached(self):
+        """[목적] 분석 실패 결과는 캐시하지 않는지 검증 (일시적 실패 고착 방지)
+
+        [검증]
+        1. set이 호출되지 않음
+        2. error 결과는 그대로 lpush됨
+        """
+        client = MagicMock()
+        client.lpush = AsyncMock()
+        client.get = AsyncMock(return_value=None)
+        client.set = AsyncMock()
+        payload = json.dumps({"videoId": "abc123"})
+
+        with patch("worker.subscriber.analyze_video", side_effect=ValueError("boom")):
+            await _process_request(client, payload)
+
+        client.set.assert_not_called()
+        client.lpush.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_cache_redis_error_falls_back_to_analysis(self):
+        """[목적] 캐시 조회/저장에서 RedisError가 나도 요청이 유실되지 않고 분석·발행까지 진행되는지 검증
+
+        [검증]
+        1. 예외가 전파되지 않음
+        2. analyze_video가 호출되고 결과가 lpush됨
+        """
+        result = {"videoId": "abc123", "genre": "pop", "mood": "happy"}
+        client = MagicMock()
+        client.lpush = AsyncMock()
+        client.get = AsyncMock(side_effect=redis.RedisError("boom"))
+        client.set = AsyncMock(side_effect=redis.RedisError("boom"))
+        payload = json.dumps({"videoId": "abc123"})
+
+        with patch("worker.subscriber.analyze_video", return_value=result) as mock_analyze:
+            await _process_request(client, payload)
+
+        mock_analyze.assert_called_once_with("abc123")
+        client.lpush.assert_called_once_with(SPRING_ANALYSIS_QUEUE_KEY, json.dumps(result))
+
+    @pytest.mark.asyncio
+    async def test_analysis_timeout_kills_executor_and_publishes_error(self):
+        """[목적] 분석이 ANALYSIS_TIMEOUT_SEC를 넘기면 멈춘 프로세스를 강제 종료하고 error를 발행하는지 검증
+
+        [검증]
+        1. _kill_executor가 호출됨
+        2. {"videoId", "error": "TimeoutError"}가 lpush되고 캐시에는 저장되지 않음
+        """
+        client = MagicMock()
+        client.lpush = AsyncMock()
+        client.get = AsyncMock(return_value=None)
+        client.set = AsyncMock()
+        payload = json.dumps({"videoId": "abc123"})
+
+        with patch("worker.subscriber.ANALYSIS_TIMEOUT_SEC", 0.05), \
+                patch("worker.subscriber.analyze_video", side_effect=lambda _: time.sleep(0.3)), \
+                patch("worker.subscriber._kill_executor") as mock_kill:
+            await _process_request(client, payload)
+
+        mock_kill.assert_called_once()
+        client.set.assert_not_called()
+        client.lpush.assert_called_once_with(
+            SPRING_ANALYSIS_QUEUE_KEY,
+            json.dumps({"videoId": "abc123", "error": "TimeoutError"}),
+        )
 
 
 class TestExecutor:
@@ -163,6 +287,35 @@ class TestExecutor:
         subscriber_module._executor = None
 
         _shutdown_executor()
+
+    def test_kill_executor_kills_children_and_resets_pool(self):
+        """[목적] 타임아웃 시 자식 프로세스를 kill하고 대기 없이 풀을 폐기하는지 검증
+
+        [검증]
+        1. 모든 자식 프로세스에 kill이 호출됨
+        2. executor.shutdown(wait=False, cancel_futures=True)가 호출됨
+        3. 모듈의 _executor가 None으로 초기화됨
+        """
+        child = MagicMock()
+        fake_pool = MagicMock()
+        fake_pool._processes = {1: child}
+        subscriber_module._executor = fake_pool
+
+        _kill_executor()
+
+        child.kill.assert_called_once()
+        fake_pool.shutdown.assert_called_once_with(wait=False, cancel_futures=True)
+        assert subscriber_module._executor is None
+
+    def test_kill_executor_is_noop_without_pool(self):
+        """[목적] 풀이 없을 때 강제 종료 호출이 예외 없이 무시되는지 검증
+
+        [검증]
+        1. 예외가 발생하지 않음
+        """
+        subscriber_module._executor = None
+
+        _kill_executor()
 
 
 class TestSubscriberLoop:

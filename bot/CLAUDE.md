@@ -9,10 +9,12 @@
 ## Development Rules
 - **Modular Structure:** `discord.ext.commands.Cog` 기반 명령어 및 이벤트 리스너 모듈화
 - **Redis Subscriber:**
-  - 독립 비동기(`asyncio`) 백그라운드 태스크로 Redis List (`bot:commands` 키, `BRPOP` 방식) 메시지 소비
+  - 독립 비동기(`asyncio`) 백그라운드 태스크로 Redis List (`bot:commands` 키, `BLMOVE` 방식) 메시지 소비
   - 봇 재시작 시에도 중단 기간 내 발행 메시지가 손실 없이 처리되도록 구조 유지
   - 별도 Redis client를 만들지 않고 `bot.redis_client`를 공유. 종료 시(`ChichiBot.close()`) `stop_subscriber()`로 구독 태스크를 취소한 뒤 Redis client 종료
-  - `BRPOP` 이후 크래시 시 해당 요청은 유실됨 (알려진 한계)
+  - `BLMOVE`로 요청을 processing 리스트(`bot:commands:processing`)로 옮겨 처리하고, 처리 후 `LREM`으로 제거. 구독 시작 시 processing에 남은 요청을 원래 큐로 복구 (Redis 서버 6.2+ 필요)
+  - 처리 중 예외는 로그 후 `LREM`(재시작마다 재처리 방지), 종료(취소)·크래시는 `LREM`하지 않아 다음 기동 때 재처리됨
+  - at-least-once: `LREM` 직전 크래시 시 같은 요청이 한 번 더 처리되어 같은 곡이 중복 재생될 수 있음 (알려진 한계)
 - **Queue Schema (Redis List):**
   - 요청: `bot:commands` (`BOT_QUEUE_KEY`) <- `{"action": "playback", "guild_id", "user_id", "query"}`
   - 발행: `spring:play-history` (`SPRING_QUEUE_KEY`) -> `{"title", "uploader", "image", "videoId", "discordId"}`
