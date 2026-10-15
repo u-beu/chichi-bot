@@ -11,6 +11,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_QUEUE_KEY = os.getenv("BOT_QUEUE_KEY", "bot:commands")
+BOT_PROCESSING_KEY = f"{BOT_QUEUE_KEY}:processing"
 ACTION_PLAYBACK = "playback"
 
 
@@ -40,17 +41,31 @@ async def _process_command(bot, payload: str):
     await handle_api_playback(bot, guild_id, user_id, query)
 
 
+async def _requeue_processing(client):
+    """이전 실행에서 처리 중이던 요청(processing 리스트)을 원래 큐로 되돌림."""
+    while await client.lmove(BOT_PROCESSING_KEY, BOT_QUEUE_KEY, "LEFT", "RIGHT"):
+        logger.warning("미완료 요청 복구")
+
+
 async def _subscriber_loop(bot):
     client = bot.redis_client
     logger.info(f"레디스 구독 시작(queue={BOT_QUEUE_KEY})")
 
+    try:
+        await _requeue_processing(client)
+    except redis.RedisError:
+        logger.exception("예외 발생: 레디스: 미완료 요청 복구 실패")
+
     while True:
         try:
-            result = await client.brpop(BOT_QUEUE_KEY, 0)
-            if not result:
+            payload = await client.blmove(BOT_QUEUE_KEY, BOT_PROCESSING_KEY, 0, "RIGHT", "LEFT")
+            if not payload:
                 continue
-            _, payload = result
-            await _process_command(bot, payload)
+            try:
+                await _process_command(bot, payload)
+            except Exception:
+                logger.exception("예외 발생: 커맨드 처리과정")
+            await client.lrem(BOT_PROCESSING_KEY, 1, payload)
         except asyncio.CancelledError:
             logger.info("레디스 구독 중지")
             raise

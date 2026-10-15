@@ -6,7 +6,14 @@ import redis
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import bot.subscriber as subscriber_module
-from bot.subscriber import _process_command, _subscriber_loop, start_subscriber, stop_subscriber
+from bot.subscriber import (
+    BOT_PROCESSING_KEY,
+    BOT_QUEUE_KEY,
+    _process_command,
+    _subscriber_loop,
+    start_subscriber,
+    stop_subscriber,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -66,39 +73,49 @@ class TestProcessCommand:
         mock_handle.assert_not_called()
 
 
+def _make_client(**overrides):
+    """복구할 processing 요청이 없는 기본 Redis client mock."""
+    client = MagicMock()
+    client.lmove = AsyncMock(return_value=None)
+    client.lrem = AsyncMock()
+    for name, value in overrides.items():
+        setattr(client, name, value)
+    return client
+
+
 class TestSubscriberLoop:
     @pytest.mark.asyncio
     async def test_processes_message_then_stops(self):
-        """[목적] brpop으로 받은 메시지를 _process_command로 전달하는지 검증
+        """[목적] blmove로 받은 메시지를 _process_command로 전달하고 처리 후 processing에서 제거하는지 검증
 
         [검증]
         1. CancelledError 발생 시 예외가 그대로 전파됨
-        2. _process_command가 수신한 payload로 호출됨
+        2. blmove가 요청 큐 -> processing 리스트로 호출됨
+        3. _process_command가 수신한 payload로 호출됨
+        4. 처리 후 lrem으로 processing에서 제거됨
         """
         bot = MagicMock()
-        fake_client = MagicMock()
-        fake_client.brpop = AsyncMock(side_effect=[("bot:commands", "payload"), asyncio.CancelledError()])
-
+        fake_client = _make_client(blmove=AsyncMock(side_effect=["payload", asyncio.CancelledError()]))
         bot.redis_client = fake_client
 
         with patch("bot.subscriber._process_command", new_callable=AsyncMock) as mock_process:
             with pytest.raises(asyncio.CancelledError):
                 await _subscriber_loop(bot)
 
+        fake_client.blmove.assert_called_with(BOT_QUEUE_KEY, BOT_PROCESSING_KEY, 0, "RIGHT", "LEFT")
         mock_process.assert_called_once_with(bot, "payload")
+        fake_client.lrem.assert_called_once_with(BOT_PROCESSING_KEY, 1, "payload")
 
     @pytest.mark.asyncio
     async def test_skips_empty_result(self):
-        """[목적] brpop 결과가 없을 때(None) 메시지 처리를 건너뛰는지 검증
+        """[목적] blmove 결과가 없을 때(None) 메시지 처리를 건너뛰는지 검증
 
         [검증]
         1. CancelledError가 전파됨
-        2. _process_command가 호출되지 않음
+        2. _process_command와 lrem이 호출되지 않음
         """
         bot = MagicMock()
-        fake_client = MagicMock()
-        fake_client.brpop = AsyncMock(side_effect=[None, asyncio.CancelledError()])
-
+        fake_client = _make_client(blmove=AsyncMock(side_effect=[None, asyncio.CancelledError()]))
         bot.redis_client = fake_client
 
         with patch("bot.subscriber._process_command", new_callable=AsyncMock) as mock_process:
@@ -106,6 +123,7 @@ class TestSubscriberLoop:
                 await _subscriber_loop(bot)
 
         mock_process.assert_not_called()
+        fake_client.lrem.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_retries_on_redis_error(self):
@@ -116,9 +134,7 @@ class TestSubscriberLoop:
         2. 이후 CancelledError로 루프가 종료됨
         """
         bot = MagicMock()
-        fake_client = MagicMock()
-        fake_client.brpop = AsyncMock(side_effect=[redis.RedisError("boom"), asyncio.CancelledError()])
-
+        fake_client = _make_client(blmove=AsyncMock(side_effect=[redis.RedisError("boom"), asyncio.CancelledError()]))
         bot.redis_client = fake_client
 
         with patch("bot.subscriber.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
@@ -135,13 +151,87 @@ class TestSubscriberLoop:
         1. 예외가 전파되지 않고 다음 반복(CancelledError)까지 루프가 유지됨
         """
         bot = MagicMock()
-        fake_client = MagicMock()
-        fake_client.brpop = AsyncMock(side_effect=[Exception("boom"), asyncio.CancelledError()])
-
+        fake_client = _make_client(blmove=AsyncMock(side_effect=[Exception("boom"), asyncio.CancelledError()]))
         bot.redis_client = fake_client
 
         with pytest.raises(asyncio.CancelledError):
             await _subscriber_loop(bot)
+
+    @pytest.mark.asyncio
+    async def test_command_failure_still_removes_from_processing(self):
+        """[목적] 명령 처리 중 일반 예외가 나도 processing에서 제거되어 재시작마다 재처리되지 않는지 검증
+
+        [검증]
+        1. 예외가 전파되지 않고 lrem이 호출됨
+        """
+        bot = MagicMock()
+        fake_client = _make_client(blmove=AsyncMock(side_effect=["payload", asyncio.CancelledError()]))
+        bot.redis_client = fake_client
+
+        with patch("bot.subscriber._process_command", new_callable=AsyncMock, side_effect=Exception("boom")):
+            with pytest.raises(asyncio.CancelledError):
+                await _subscriber_loop(bot)
+
+        fake_client.lrem.assert_called_once_with(BOT_PROCESSING_KEY, 1, "payload")
+
+    @pytest.mark.asyncio
+    async def test_cancel_during_processing_keeps_in_processing(self):
+        """[목적] 처리 중 취소(종료)되면 processing에 남겨 다음 기동 때 복구되도록 하는지 검증
+
+        [검증]
+        1. CancelledError가 전파됨
+        2. lrem이 호출되지 않음
+        """
+        bot = MagicMock()
+        fake_client = _make_client(blmove=AsyncMock(return_value="payload"))
+        bot.redis_client = fake_client
+
+        with patch("bot.subscriber._process_command", new_callable=AsyncMock, side_effect=asyncio.CancelledError()):
+            with pytest.raises(asyncio.CancelledError):
+                await _subscriber_loop(bot)
+
+        fake_client.lrem.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_requeues_unfinished_requests_on_start(self):
+        """[목적] 시작 시 processing에 남은 요청을 모두 원래 큐로 되돌린 뒤 소비를 시작하는지 검증
+
+        [검증]
+        1. lmove가 processing -> 요청 큐로 비어 있을 때까지 반복 호출됨
+        2. 복구 후 blmove 소비 루프가 시작됨
+        """
+        bot = MagicMock()
+        fake_client = _make_client(
+            lmove=AsyncMock(side_effect=["a", "b", None]),
+            blmove=AsyncMock(side_effect=asyncio.CancelledError()),
+        )
+        bot.redis_client = fake_client
+
+        with pytest.raises(asyncio.CancelledError):
+            await _subscriber_loop(bot)
+
+        assert fake_client.lmove.call_count == 3
+        fake_client.lmove.assert_called_with(BOT_PROCESSING_KEY, BOT_QUEUE_KEY, "LEFT", "RIGHT")
+        fake_client.blmove.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_requeue_redis_error_does_not_stop_loop(self):
+        """[목적] 복구 중 RedisError가 나도 소비 루프는 계속 시작되는지 검증
+
+        [검증]
+        1. 예외가 전파되지 않고 blmove 루프에 진입함
+        """
+        bot = MagicMock()
+        fake_client = _make_client(
+            lmove=AsyncMock(side_effect=redis.RedisError("boom")),
+            blmove=AsyncMock(side_effect=asyncio.CancelledError()),
+        )
+        bot.redis_client = fake_client
+
+        with pytest.raises(asyncio.CancelledError):
+            await _subscriber_loop(bot)
+
+        fake_client.blmove.assert_called_once()
 
 
 class TestStartSubscriber:
