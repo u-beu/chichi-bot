@@ -15,7 +15,9 @@
   - Redis Queue(`BRPOP` 등) 기반 비동기 작업 수신
   - 메인 런타임 블로킹 방지를 위해 단일 분석 프로세스(`ProcessPoolExecutor(max_workers=1)`)에서 실행 (동시 분석 1건)
   - `SIGTERM`/`SIGINT` 수신 시 구독 태스크 취소 후 Redis client 및 분석 프로세스 정리
-  - `BRPOP` 이후 크래시 시 해당 요청은 유실됨 (알려진 한계)
+  - `BRPOP` 이후 크래시 시 해당 요청은 유실됨 (알려진 한계). Spring의 재시도·타임아웃으로 보완하며, 재시도 타임아웃은 `큐 대기 + ANALYSIS_TIMEOUT_SEC`보다 길게 설정
+  - **결과 캐시:** 분석 성공 결과만 `worker:result:{videoId}`에 TTL 600초(`RESULT_CACHE_TTL_SEC`)로 저장. 캐시 hit인 중복 요청은 분석 없이 캐시된 결과를 재발행(건너뛰면 `LPUSH` 유실·재요청 시 결과가 다시 사라짐). 실패 결과는 캐시하지 않으며, 캐시 조회·저장의 `RedisError`는 로그 후 캐시 미스로 처리
+  - **분석 타임아웃:** `ANALYSIS_TIMEOUT_SEC`(300초) 초과 시 멈춘 분석 프로세스를 강제 종료(`_kill_executor`, `executor._processes` private 접근)하고 `{"videoId", "error": "TimeoutError"}` 발행
   - 결과 큐 발행(`LPUSH`) 실패 시 해당 결과는 로그만 남기고 유실됨 (알려진 한계)
   - 종료 시 `_shutdown_executor()`가 `wait=True`로 진행 중인 분석이 끝날 때까지 대기 (알려진 한계)
 - **Queue Schema (Redis List):**
