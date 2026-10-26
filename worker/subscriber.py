@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 WORKER_QUEUE_KEY = os.getenv("WORKER_QUEUE_KEY", "worker:analysis-requests")
+WORKER_PROCESSING_KEY = f"{WORKER_QUEUE_KEY}:processing"
 SPRING_ANALYSIS_QUEUE_KEY = os.getenv("SPRING_ANALYSIS_QUEUE_KEY", "spring:analysis-results")
 IDLE_UNLOAD_SEC = 600
 RESULT_CACHE_TTL_SEC = 600
@@ -107,19 +108,44 @@ async def _process_request(client: redis_asyncio.Redis, payload: str) -> None:
     await _publish(client, result)
 
 
+async def _recover_processing(client: redis_asyncio.Redis) -> None:
+    """이전 실행에서 처리 중이던 요청(processing 리스트)을 재처리하지 않고 WorkerCrashed로 통보.
+
+    같은 요청이 크래시(OOM 등)를 반복 유발하면 재기동마다 큐가 막히므로 재처리하지 않는다.
+    """
+    while payload := await client.lpop(WORKER_PROCESSING_KEY):
+        try:
+            video_id = json.loads(payload).get("videoId")
+        except (json.JSONDecodeError, AttributeError):
+            video_id = None
+        if not isinstance(video_id, str) or not video_id:
+            logger.warning(f"에러 발생: 미완료 요청 부적합, 폐기: {payload}")
+            continue
+        logger.warning(f"미완료 요청 WorkerCrashed 통보 videoId={video_id}")
+        await _publish(client, {"videoId": video_id, "error": "WorkerCrashed"})
+
+
 async def subscriber_loop() -> None:
     client = redis_asyncio.from_url(REDIS_URL, decode_responses=True)
     logger.info(f"레디스 구독 시작(queue={WORKER_QUEUE_KEY})")
 
     try:
+        try:
+            await _recover_processing(client)
+        except redis.RedisError:
+            logger.exception("예외 발생: 레디스: 미완료 요청 복구 실패")
+
         while True:
             try:
-                result = await client.brpop(WORKER_QUEUE_KEY, IDLE_UNLOAD_SEC)
-                if not result:
+                payload = await client.blmove(WORKER_QUEUE_KEY, WORKER_PROCESSING_KEY, IDLE_UNLOAD_SEC, "RIGHT", "LEFT")
+                if not payload:
                     _shutdown_executor()
                     continue
-                _, payload = result
-                await _process_request(client, payload)
+                try:
+                    await _process_request(client, payload)
+                except Exception:
+                    logger.exception("예외 발생: 태스크 처리과정")
+                await client.lrem(WORKER_PROCESSING_KEY, 1, payload)
             except asyncio.CancelledError:
                 logger.info("레디스 구독 중지")
                 raise
