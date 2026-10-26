@@ -43,7 +43,7 @@ def _shutdown_executor() -> None:
 
 
 def _kill_executor() -> None:
-    """멈춘 분석 프로세스를 강제 종료. _shutdown_executor는 wait=True라 멈춘 자식을 다시 기다리므로 별도 경로."""
+    """진행 중인 분석 프로세스를 강제 종료(타임아웃·워커 종료). _shutdown_executor는 wait=True라 멈춘 자식을 다시 기다리므로 별도 경로."""
     global _executor
     if _executor is not None:
         # 표준 API에 실행 중인 자식을 강제 종료하는 수단이 없어 private 속성 접근
@@ -51,7 +51,7 @@ def _kill_executor() -> None:
             process.kill()
         _executor.shutdown(wait=False, cancel_futures=True)
         _executor = None
-        logger.info("분석 프로세스 강제 종료(타임아웃)")
+        logger.info("분석 프로세스 강제 종료")
 
 
 async def _publish(client: redis_asyncio.Redis, message: dict) -> None:
@@ -156,4 +156,4 @@ async def subscriber_loop() -> None:
                 logger.exception("예외 발생: 태스크 처리과정")
     finally:
         await client.aclose()
-        _shutdown_executor()
+        _kill_executor()

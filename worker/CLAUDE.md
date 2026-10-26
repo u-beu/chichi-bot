@@ -14,13 +14,13 @@
 - **Queue & Async Execution:**
   - Redis Queue(`BLMOVE` 방식) 기반 비동기 작업 수신
   - 메인 런타임 블로킹 방지를 위해 단일 분석 프로세스(`ProcessPoolExecutor(max_workers=1)`)에서 실행 (동시 분석 1건)
-  - `SIGTERM`/`SIGINT` 수신 시 구독 태스크 취소 후 Redis client 및 분석 프로세스 정리
+  - `SIGTERM`/`SIGINT` 수신 시 구독 태스크 취소 후 Redis client 정리 및 분석 프로세스 강제 종료
   - `BLMOVE`로 요청을 processing 리스트(`worker:analysis-requests:processing`)로 옮겨 처리하고, 처리 후 `LREM`으로 제거 (Redis 서버 6.2+ 필요). 처리 중 일반 예외는 로그 후 `LREM`, 종료(취소)·크래시는 `LREM`하지 않음
   - **크래시 복구:** 구독 시작 시 processing에 남은 요청은 재처리하지 않고 `{"videoId", "error": "WorkerCrashed"}`를 발행 후 제거 (같은 요청이 OOM 등 크래시를 반복 유발하면 재기동마다 큐가 막히는 crash loop 방지). 정상 종료 중 취소된 요청도 동일하게 통보되며, 재시도 여부는 Spring이 판단. 재시도 타임아웃은 `큐 대기 + ANALYSIS_TIMEOUT_SEC`보다 길게 설정
   - **결과 캐시:** 분석 성공 결과만 `worker:result:{videoId}`에 TTL 600초(`RESULT_CACHE_TTL_SEC`)로 저장. 캐시 hit인 중복 요청은 분석 없이 캐시된 결과를 재발행(건너뛰면 `LPUSH` 유실·재요청 시 결과가 다시 사라짐). 실패 결과는 캐시하지 않으며, 캐시 조회·저장의 `RedisError`는 로그 후 캐시 미스로 처리
-  - **분석 타임아웃:** `ANALYSIS_TIMEOUT_SEC`(300초) 초과 시 멈춘 분석 프로세스를 강제 종료(`_kill_executor`, `executor._processes` private 접근)하고 `{"videoId", "error": "TimeoutError"}` 발행
+  - **분석 타임아웃:** `ANALYSIS_TIMEOUT_SEC`(300초) 초과 시 멈춘 분석 프로세스를 강제 종료(`_kill_executor`, `executor._processes` private 접근. 워커 종료 시에도 사용)하고 `{"videoId", "error": "TimeoutError"}` 발행
   - 결과 큐 발행(`LPUSH`) 실패 시 해당 결과는 로그만 남기고 유실됨 (알려진 한계)
-  - 종료 시 `_shutdown_executor()`가 `wait=True`로 진행 중인 분석이 끝날 때까지 대기 (알려진 한계)
+  - 종료 시 `_kill_executor()`로 진행 중인 분석 프로세스를 강제 종료(이벤트 루프 블로킹·고아 프로세스 방지). 진행 중이던 요청은 processing에 남아 재기동 시 `WorkerCrashed`로 통보됨
 - **Queue Schema (Redis List):**
   - 요청: `worker:analysis-requests` (`WORKER_QUEUE_KEY`) <- `{"videoId": str}`
   - 결과: `spring:analysis-results` (`SPRING_ANALYSIS_QUEUE_KEY`) -> 성공 `{"videoId", "genre", "mood"}` / 실패 `{"videoId", "error"}`

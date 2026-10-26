@@ -355,7 +355,7 @@ class TestSubscriberLoop:
 
         [검증]
         1. blmove가 IDLE_UNLOAD_SEC 타임아웃으로 호출됨
-        2. _shutdown_executor가 idle 처리와 종료 정리로 총 2회 호출됨
+        2. idle 처리로 _shutdown_executor가 1회, 종료 정리로 _kill_executor가 1회 호출됨
         3. CancelledError가 전파되고 _process_request는 호출되지 않음
         """
         fake_client = _make_client()
@@ -363,6 +363,7 @@ class TestSubscriberLoop:
 
         with patch("worker.subscriber.redis_asyncio.from_url", return_value=fake_client), \
                 patch("worker.subscriber._shutdown_executor") as mock_shutdown, \
+                patch("worker.subscriber._kill_executor") as mock_kill, \
                 patch("worker.subscriber._process_request", new_callable=AsyncMock) as mock_process:
             with pytest.raises(asyncio.CancelledError):
                 await subscriber_loop()
@@ -370,7 +371,8 @@ class TestSubscriberLoop:
         fake_client.blmove.assert_any_call(
             WORKER_QUEUE_KEY, WORKER_PROCESSING_KEY, IDLE_UNLOAD_SEC, "RIGHT", "LEFT"
         )
-        assert mock_shutdown.call_count == 2
+        mock_shutdown.assert_called_once()
+        mock_kill.assert_called_once()
         mock_process.assert_not_called()
 
     @pytest.mark.asyncio
@@ -412,18 +414,20 @@ class TestSubscriberLoop:
         [검증]
         1. CancelledError가 전파됨
         2. client.aclose()가 호출됨
-        3. _shutdown_executor가 호출됨
+        3. _kill_executor가 호출되고 wait=True인 _shutdown_executor는 호출되지 않음
         """
         fake_client = _make_client()
         fake_client.blmove = AsyncMock(side_effect=asyncio.CancelledError())
 
         with patch("worker.subscriber.redis_asyncio.from_url", return_value=fake_client), \
-                patch("worker.subscriber._shutdown_executor") as mock_shutdown:
+                patch("worker.subscriber._shutdown_executor") as mock_shutdown, \
+                patch("worker.subscriber._kill_executor") as mock_kill:
             with pytest.raises(asyncio.CancelledError):
                 await subscriber_loop()
 
         fake_client.aclose.assert_awaited_once()
-        mock_shutdown.assert_called_once()
+        mock_kill.assert_called_once()
+        mock_shutdown.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_removes_from_processing_after_success(self):
