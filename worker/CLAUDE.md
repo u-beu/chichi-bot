@@ -12,10 +12,11 @@
   - AudioSet 527 클래스 중 `GENRE_LABELS`/`MOOD_LABELS` 부분집합 logits만 골라 argmax
   - 30초 음원을 10초씩 최대 3조각으로 분할해 각각 추론 후 logits 평균. 마지막 조각이 5초 미만이면(첫 조각 제외) 제외
 - **Queue & Async Execution:**
-  - Redis Queue(`BRPOP` 등) 기반 비동기 작업 수신
+  - Redis Queue(`BLMOVE` 방식) 기반 비동기 작업 수신
   - 메인 런타임 블로킹 방지를 위해 단일 분석 프로세스(`ProcessPoolExecutor(max_workers=1)`)에서 실행 (동시 분석 1건)
   - `SIGTERM`/`SIGINT` 수신 시 구독 태스크 취소 후 Redis client 및 분석 프로세스 정리
-  - `BRPOP` 이후 크래시 시 해당 요청은 유실됨 (알려진 한계). Spring의 재시도·타임아웃으로 보완하며, 재시도 타임아웃은 `큐 대기 + ANALYSIS_TIMEOUT_SEC`보다 길게 설정
+  - `BLMOVE`로 요청을 processing 리스트(`worker:analysis-requests:processing`)로 옮겨 처리하고, 처리 후 `LREM`으로 제거 (Redis 서버 6.2+ 필요). 처리 중 일반 예외는 로그 후 `LREM`, 종료(취소)·크래시는 `LREM`하지 않음
+  - **크래시 복구:** 구독 시작 시 processing에 남은 요청은 재처리하지 않고 `{"videoId", "error": "WorkerCrashed"}`를 발행 후 제거 (같은 요청이 OOM 등 크래시를 반복 유발하면 재기동마다 큐가 막히는 crash loop 방지). 정상 종료 중 취소된 요청도 동일하게 통보되며, 재시도 여부는 Spring이 판단. 재시도 타임아웃은 `큐 대기 + ANALYSIS_TIMEOUT_SEC`보다 길게 설정
   - **결과 캐시:** 분석 성공 결과만 `worker:result:{videoId}`에 TTL 600초(`RESULT_CACHE_TTL_SEC`)로 저장. 캐시 hit인 중복 요청은 분석 없이 캐시된 결과를 재발행(건너뛰면 `LPUSH` 유실·재요청 시 결과가 다시 사라짐). 실패 결과는 캐시하지 않으며, 캐시 조회·저장의 `RedisError`는 로그 후 캐시 미스로 처리
   - **분석 타임아웃:** `ANALYSIS_TIMEOUT_SEC`(300초) 초과 시 멈춘 분석 프로세스를 강제 종료(`_kill_executor`, `executor._processes` private 접근)하고 `{"videoId", "error": "TimeoutError"}` 발행
   - 결과 큐 발행(`LPUSH`) 실패 시 해당 결과는 로그만 남기고 유실됨 (알려진 한계)
@@ -23,7 +24,7 @@
 - **Queue Schema (Redis List):**
   - 요청: `worker:analysis-requests` (`WORKER_QUEUE_KEY`) <- `{"videoId": str}`
   - 결과: `spring:analysis-results` (`SPRING_ANALYSIS_QUEUE_KEY`) -> 성공 `{"videoId", "genre", "mood"}` / 실패 `{"videoId", "error"}`
-  - 실패 결과의 `error`는 예외 클래스명(예: `AudioSourceError`, `AudioDecodingError`)만 전달하며 예외 메시지·스트리밍 URL은 포함하지 않음
+  - 실패 결과의 `error`는 예외 클래스명(예: `AudioSourceError`, `AudioDecodingError`, `TimeoutError`) 또는 `WorkerCrashed`만 전달하며 예외 메시지·스트리밍 URL은 포함하지 않음
   - JSON 형식 오류 또는 `videoId` 누락/비문자열 요청은 경고 로그 후 폐기 (결과 미발행)
 - **Environment Variables:**
   - `WORKER_QUEUE_KEY`: 분석 요청 큐 키 (기본값 `worker:analysis-requests`)
