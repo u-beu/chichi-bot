@@ -1,3 +1,6 @@
+# EC2 배포 시절 CI/CD 워크플로 (보관용, 실행되지 않음)
+# 전환 이유는 docs/adr/002-remove-ec2-cd.md 참조
+
 name: CI/CD
 
 on:
