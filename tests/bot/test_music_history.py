@@ -3,7 +3,7 @@ import json
 import pytest
 from unittest.mock import AsyncMock
 
-from bot.music import SPRING_QUEUE_KEY, send_play_history
+from bot.music import SPRING_QUEUE_KEY, SPRING_RESULT_QUEUE_KEY, send_play_history, send_playback_failure
 
 
 class TestSendPlayHistory:
@@ -57,3 +57,34 @@ class TestSendPlayHistory:
 
         # 예외가 전파되지 않고 로깅만 되어야 함
         await send_play_history({"title": "T"}, 1, redis_client)
+
+
+class TestSendPlaybackFailure:
+    @pytest.mark.asyncio
+    async def test_builds_not_in_voice_payload(self):
+        """[목적] 재생 실패 알림 payload 형식과 발행 키를 검증
+
+        [검증]
+        1. lpush가 SPRING_RESULT_QUEUE_KEY를 키로 호출됨
+        2. payload가 discordId와 status("not_in_voice")를 가짐
+        """
+        redis_client = AsyncMock()
+
+        await send_playback_failure(123, redis_client)
+
+        redis_client.lpush.assert_called_once()
+        key, payload_json = redis_client.lpush.call_args[0]
+        assert key == SPRING_RESULT_QUEUE_KEY
+        assert json.loads(payload_json) == {"discordId": 123, "status": "not_in_voice"}
+
+    @pytest.mark.asyncio
+    async def test_exception_is_swallowed(self):
+        """[목적] redis_client.lpush에서 예외가 발생해도 호출자에게 전파되지 않는지 검증
+
+        [검증]
+        1. 예외 발생 시에도 함수가 정상적으로 반환됨(로깅만 수행)
+        """
+        redis_client = AsyncMock()
+        redis_client.lpush.side_effect = Exception("redis down")
+
+        await send_playback_failure(1, redis_client)

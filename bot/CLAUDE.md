@@ -16,13 +16,15 @@
   - 처리 중 예외는 로그 후 `LREM`(재시작마다 재처리 방지), 종료(취소)·크래시는 `LREM`하지 않아 다음 기동 때 재처리됨
   - at-least-once: `LREM` 직전 크래시 시 같은 요청이 한 번 더 처리되어 같은 곡이 중복 재생될 수 있음 (알려진 한계)
 - **Queue Schema (Redis List):**
-  - 요청: `bot:commands` (`BOT_QUEUE_KEY`) <- `{"action": "playback", "guild_id", "user_id", "query"}`
+  - 요청: `bot:commands` (`BOT_QUEUE_KEY`) <- `{"action": "playback", "user_id", "query"}` (길드는 `user_id`가 음성 채널에 접속한 길드를 `bot.guilds`에서 탐색)
   - 발행: `spring:play-history` (`SPRING_QUEUE_KEY`) -> `{"title", "uploader", "image", "videoId", "discordId"}`
-  - JSON 형식 오류, 미등록 `action`, `guild_id`/`user_id` 누락·부적합 요청은 경고 로그 후 폐기
+  - 발행: `spring:play-result` (`SPRING_RESULT_QUEUE_KEY`) -> `{"discordId", "status": "not_in_voice"}` (API 재생 요청 시 사용자가 어느 길드의 음성 채널에도 없을 때만 발행)
+  - JSON 형식 오류, 미등록 `action`, `user_id` 누락·부적합 요청은 경고 로그 후 폐기
 - **Environment Variables:**
   - `DISCORD_TOKEN`: Discord bot 토큰
   - `BOT_QUEUE_KEY`: 요청 큐 키 (기본값 `bot:commands`)
   - `SPRING_QUEUE_KEY`: 재생 기록 발행 큐 키 (기본값 `spring:play-history`)
+  - `SPRING_RESULT_QUEUE_KEY`: 재생 실패 알림 발행 큐 키 (기본값 `spring:play-result`)
   - `main.py`가 `load_dotenv()`를 먼저 호출한 뒤 `bot` 모듈을 import (모듈 레벨 `os.getenv`가 `.env`를 읽도록)
 - **Metadata Sync:** `chichi` (Spring Boot) 백엔드로의 재생 상태/메타데이터 전달 시 Redis 메시지 버스 활용
 - **Audio Streaming:**
