@@ -5,7 +5,7 @@ import os
 
 import redis
 
-from bot.music import handle_api_playback
+from bot.music import handle_api_playback, send_playback_failure
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,14 +31,14 @@ async def _process_command(bot, payload: str):
         return
 
     try:
-        guild_id = int(data["guild_id"])
         user_id = int(data["user_id"])
         query = data.get("query", "")
     except (KeyError, TypeError, ValueError) as e:
         logger.warning(f"에러 발생: 부적절한 입력: {e}")
         return
 
-    await handle_api_playback(bot, guild_id, user_id, query)
+    if not await handle_api_playback(bot, user_id, query):
+        await send_playback_failure(user_id, bot.redis_client)
 
 
 async def _requeue_processing(client):

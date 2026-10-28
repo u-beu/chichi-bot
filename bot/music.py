@@ -10,6 +10,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SPRING_QUEUE_KEY = os.getenv("SPRING_QUEUE_KEY", "spring:play-history")
+SPRING_RESULT_QUEUE_KEY = os.getenv("SPRING_RESULT_QUEUE_KEY", "spring:play-result")
 MAX_DURATION = 7200
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
@@ -86,21 +87,31 @@ async def send_play_history(song: dict, discord_id: int, redis_client):
         logger.exception("예외 발생: %s", e)
 
 
-async def handle_api_playback(bot: commands.Bot, guild_id: int, user_id: int, query: str):
-    guild = bot.get_guild(guild_id)
+async def send_playback_failure(discord_id: int, redis_client):
+    data = {
+        "discordId": int(discord_id),
+        "status": "not_in_voice"
+    }
+
+    try:
+        await redis_client.lpush(SPRING_RESULT_QUEUE_KEY, json.dumps(data))
+        logger.info(f"Redis 재생 실패 전송 성공: {discord_id}")
+    except Exception as e:
+        logger.exception("예외 발생: %s", e)
+
+
+async def handle_api_playback(bot: commands.Bot, user_id: int, query: str) -> bool:
+    guild = next((g for g in bot.guilds if any(user_id in vc.voice_states for vc in g.voice_channels)), None)
     if not guild:
-        logger.info(f"handle api playback 길드 없음: {guild_id}")
-        return
+        logger.info(f"handle api playback 음성 채널 접속 길드 없음: {user_id}")
+        return False
 
     member = guild.get_member(user_id) or await guild.fetch_member(user_id)
-    if not member or not member.voice or not member.voice.channel:
-        logger.info(f"handle api playback 멤버 없음: {user_id}")
-        return
 
     loop= bot.loop or asyncio.get_running_loop()
     song = await loop.run_in_executor(None, lambda: get_song_info(query, from_url=False))
 
-    queue = guild_music_queues.setdefault(guild_id, [])
+    queue = guild_music_queues.setdefault(guild.id, [])
     queue.insert(0, song)
 
     voice_client = discord.utils.get(bot.voice_clients, guild=guild)
@@ -108,6 +119,7 @@ async def handle_api_playback(bot: commands.Bot, guild_id: int, user_id: int, qu
         voice_client.stop()
     else:
         await play_music(bot, guild, member, is_refresh=False)
+    return True
 
 
 def after_playing(bot: commands.Bot, guild: discord.Guild, member: discord.Member, ctx: commands.Context=None, error=None):
