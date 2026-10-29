@@ -18,7 +18,14 @@
 - **Queue Schema (Redis List):**
   - 요청: `bot:commands` (`BOT_QUEUE_KEY`) <- `{"action": "playback", "user_id", "query"}` (길드는 `user_id`가 음성 채널에 접속한 길드를 `bot.guilds`에서 탐색)
   - 발행: `spring:play-history` (`SPRING_QUEUE_KEY`) -> `{"title", "uploader", "image", "videoId", "discordId"}`
-  - 발행: `spring:play-result` (`SPRING_RESULT_QUEUE_KEY`) -> `{"discordId", "status": "not_in_voice"}` (API 재생 요청 시 사용자가 어느 길드의 음성 채널에도 없을 때만 발행)
+  - 발행: `spring:play-result` (`SPRING_RESULT_QUEUE_KEY`) -> `{"discordId", "status"}` (재생 실패 시 발행, `status`는 아래 6종)
+    - `not_in_voice`: 요청 시점 또는 검색 직후 사용자가 어느 길드의 음성 채널에도 없음
+    - `video_too_long`: 영상 길이가 `MAX_DURATION`(2시간) 초과
+    - `search_failed`: 그 외 곡 정보 조회 실패(검색 결과 없음, yt-dlp 오류, 라이브 영상 등)
+    - `no_permission`: 봇의 음성 채널 connect/speak 권한 없음
+    - `connect_failed`: 음성 채널 `connect()`/`move_to()` 실패
+    - `playback_failed`: 재생 시작 중 예외 또는 재생 중 ffmpeg 오류(`after` 콜백의 `error`, discord.py 2.7+에서 비정상 종료가 전달됨)
+    - 재생 중 실패(`no_permission`·`connect_failed`·`playback_failed`)는 요청 출처(API/`!play`)를 구분하지 않고 해당 재생의 `user_id`로 발행
   - JSON 형식 오류, 미등록 `action`, `user_id` 누락·부적합 요청은 경고 로그 후 폐기
 - **Environment Variables:**
   - `DISCORD_TOKEN`: Discord bot 토큰

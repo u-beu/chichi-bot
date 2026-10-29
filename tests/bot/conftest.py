@@ -37,7 +37,10 @@ def member_in_voice_channel(make_permissions):
         member = MagicMock(id=member_id)
         member.voice.channel = channel
 
+        channel.voice_states = {member_id: MagicMock()}
+
         guild = MagicMock(id=guild_id)
+        guild.voice_channels = [channel]
         return guild, member, channel
     return _make
 

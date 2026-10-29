@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
-from bot.music import after_playing, handle_api_playback, play_music
+from bot.music import VideoTooLongError, after_playing, handle_api_playback, play_music
 
 
 def _make_guild(guild_id, voice_user_ids):
@@ -19,11 +19,11 @@ def _make_guild(guild_id, voice_user_ids):
 
 class TestHandleApiPlayback:
     @pytest.mark.asyncio
-    async def test_user_not_in_any_voice_returns_false(self):
-        """[목적] 사용자가 어느 길드의 음성 채널에도 없을 때 False로 조기 종료되는지 검증
+    async def test_user_not_in_any_voice_returns_not_in_voice(self):
+        """[목적] 사용자가 어느 길드의 음성 채널에도 없을 때 not_in_voice로 조기 종료되는지 검증
 
         [검증]
-        1. False를 반환함
+        1. "not_in_voice"를 반환함
         2. play_music이 호출되지 않음
         """
         bot = MagicMock()
@@ -32,56 +32,53 @@ class TestHandleApiPlayback:
         with patch("bot.music.play_music", new_callable=AsyncMock) as mock_play_music:
             result = await handle_api_playback(bot, 2, "query")
 
-        assert result is False
+        assert result == "not_in_voice"
         mock_play_music.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_picks_guild_where_user_is_in_voice(self, mock_bot, member_in_voice_channel):
+    async def test_picks_guild_where_user_is_in_voice(self, mock_bot):
         """[목적] 여러 길드 중 사용자가 음성 채널에 접속한 길드로 재생하는지 검증
 
         [검증]
-        1. True를 반환함
+        1. None(성공)을 반환함
         2. 접속한 길드의 큐에만 song이 추가됨
-        3. play_music이 접속한 길드와 멤버로 호출됨
+        3. play_music이 접속한 길드와 user_id로 호출됨
         """
         other_guild = _make_guild(1, [])
         target_guild = _make_guild(5, [2])
-        _guild, member, _channel = member_in_voice_channel()
-        target_guild.get_member.return_value = member
         mock_bot.guilds = [other_guild, target_guild]
 
         with patch("bot.music.guild_music_queues", {}) as mock_queues, \
                 patch("bot.music.get_song_info", return_value={"title": "t", "video_id": "v"}), \
                 patch("discord.utils.get", return_value=None), \
-                patch("bot.music.play_music", new_callable=AsyncMock) as mock_play_music:
+                patch("bot.music.play_music", new_callable=AsyncMock, return_value=None) as mock_play_music:
             result = await handle_api_playback(mock_bot, 2, "query")
 
-        assert result is True
+        assert result is None
         assert list(mock_queues) == [5]
-        mock_play_music.assert_called_once_with(mock_bot, target_guild, member, is_refresh=False)
+        mock_play_music.assert_called_once_with(mock_bot, target_guild, 2, is_refresh=False)
 
     @pytest.mark.asyncio
-    async def test_member_cache_miss_fetches_member(self, mock_bot, member_in_voice_channel):
-        """[목적] 멤버를 캐시에서 찾지 못하면 fetch_member로 재조회하는지 검증
+    async def test_member_cache_miss_does_not_fetch_member(self, mock_bot):
+        """[목적] 멤버 캐시에 없어도 voice_states의 user_id만으로 재생이 진행되는지 검증
 
         [검증]
-        1. guild.fetch_member가 user_id로 호출됨
-        2. play_music이 조회한 멤버로 호출됨
+        1. get_member가 None을 반환해도 guild.fetch_member가 호출되지 않음
+        2. play_music이 user_id로 호출됨
         """
         guild = _make_guild(1, [2])
-        _guild, member, _channel = member_in_voice_channel()
         guild.get_member.return_value = None
-        guild.fetch_member = AsyncMock(return_value=member)
+        guild.fetch_member = AsyncMock()
         mock_bot.guilds = [guild]
 
         with patch("bot.music.guild_music_queues", {}), \
                 patch("bot.music.get_song_info", return_value={"title": "t", "video_id": "v"}), \
                 patch("discord.utils.get", return_value=None), \
-                patch("bot.music.play_music", new_callable=AsyncMock) as mock_play_music:
+                patch("bot.music.play_music", new_callable=AsyncMock, return_value=None) as mock_play_music:
             await handle_api_playback(mock_bot, 2, "query")
 
-        guild.fetch_member.assert_called_once_with(2)
-        mock_play_music.assert_called_once_with(mock_bot, guild, member, is_refresh=False)
+        guild.fetch_member.assert_not_called()
+        mock_play_music.assert_called_once_with(mock_bot, guild, 2, is_refresh=False)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -90,7 +87,7 @@ class TestHandleApiPlayback:
         ids=["no_voice_client_starts_playback", "playing_interrupts_with_stop", "idle_voice_client_starts_playback"],
     )
     async def test_voice_client_state_controls_playback(
-        self, mock_bot, member_in_voice_channel, voice_client_state, expect_play_called, expect_stop_called
+        self, mock_bot, voice_client_state, expect_play_called, expect_stop_called
     ):
         """[목적] 길드 voice_client 상태에 따라 즉시 재생 방식이 달라지는지 검증
 
@@ -99,9 +96,7 @@ class TestHandleApiPlayback:
         2. voice_client가 없거나 재생 중이 아니면 play_music이 is_refresh=False로 호출됨
         3. 재생 중이면 voice_client.stop만 호출되고 play_music은 호출되지 않음
         """
-        _guild, member, _channel = member_in_voice_channel()
         guild = _make_guild(1, [2])
-        guild.get_member.return_value = member
         mock_bot.guilds = [guild]
 
         voice_client = None
@@ -112,16 +107,97 @@ class TestHandleApiPlayback:
         with patch("bot.music.guild_music_queues", {}) as mock_queues, \
                 patch("bot.music.get_song_info", return_value={"title": "t", "video_id": "v"}), \
                 patch("discord.utils.get", return_value=voice_client), \
-                patch("bot.music.play_music", new_callable=AsyncMock) as mock_play_music:
-            await handle_api_playback(mock_bot, 2, "query")
+                patch("bot.music.play_music", new_callable=AsyncMock, return_value=None) as mock_play_music:
+            result = await handle_api_playback(mock_bot, 2, "query")
 
+        assert result is None
         assert mock_queues[1][0]["title"] == "t"
         if expect_play_called:
-            mock_play_music.assert_called_once_with(mock_bot, guild, member, is_refresh=False)
+            mock_play_music.assert_called_once_with(mock_bot, guild, 2, is_refresh=False)
         else:
             mock_play_music.assert_not_called()
         if expect_stop_called:
             voice_client.stop.assert_called_once()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error, expected_status",
+        [
+            (VideoTooLongError(7500, 7200), "video_too_long"),
+            (Exception("boom"), "search_failed"),
+        ],
+        ids=["video_too_long", "search_failed"],
+    )
+    async def test_song_info_failure_returns_status_without_queueing(self, mock_bot, error, expected_status):
+        """[목적] 곡 정보 조회 실패 시 원인별 status를 반환하고 큐에 곡을 넣지 않는지 검증
+
+        [검증]
+        1. VideoTooLongError는 "video_too_long", 그 외 예외는 "search_failed"를 반환함
+        2. 큐에 song이 추가되지 않음
+        3. play_music이 호출되지 않음
+        """
+        mock_bot.guilds = [_make_guild(1, [2])]
+
+        with patch("bot.music.guild_music_queues", {}) as mock_queues, \
+                patch("bot.music.get_song_info", side_effect=error), \
+                patch("bot.music.play_music", new_callable=AsyncMock) as mock_play_music:
+            result = await handle_api_playback(mock_bot, 2, "query")
+
+        assert result == expected_status
+        assert mock_queues == {}
+        mock_play_music.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_user_left_during_search_returns_not_in_voice(self, mock_bot):
+        """[목적] 검색 중 사용자가 음성 채널을 나가면 not_in_voice를 반환하고 큐에 곡을 넣지 않는지 검증
+
+        [검증]
+        1. "not_in_voice"를 반환함
+        2. 큐에 song이 추가되지 않음
+        3. play_music이 호출되지 않음
+        """
+        guild = _make_guild(1, [2])
+        mock_bot.guilds = [guild]
+
+        def search_then_user_leaves(query, *, from_url):
+            guild.voice_channels[0].voice_states = {}
+            return {"title": "t", "video_id": "v"}
+
+        with patch("bot.music.guild_music_queues", {}) as mock_queues, \
+                patch("bot.music.get_song_info", side_effect=search_then_user_leaves), \
+                patch("bot.music.play_music", new_callable=AsyncMock) as mock_play_music:
+            result = await handle_api_playback(mock_bot, 2, "query")
+
+        assert result == "not_in_voice"
+        assert mock_queues == {}
+        mock_play_music.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "play_music_kwargs, expected_status",
+        [
+            ({"return_value": "no_permission"}, "no_permission"),
+            ({"return_value": "connect_failed"}, "connect_failed"),
+            ({"side_effect": Exception("boom")}, "playback_failed"),
+        ],
+        ids=["no_permission", "connect_failed", "play_music_exception"],
+    )
+    async def test_play_music_failure_status_is_returned(self, mock_bot, play_music_kwargs, expected_status):
+        """[목적] play_music의 실패 status와 예외가 호출자에게 status로 전달되는지 검증
+
+        [검증]
+        1. play_music이 status를 반환하면 그대로 반환됨
+        2. play_music이 예외를 던지면 "playback_failed"를 반환함
+        """
+        mock_bot.guilds = [_make_guild(1, [2])]
+
+        with patch("bot.music.guild_music_queues", {}), \
+                patch("bot.music.get_song_info", return_value={"title": "t", "video_id": "v"}), \
+                patch("discord.utils.get", return_value=None), \
+                patch("bot.music.play_music", new_callable=AsyncMock, **play_music_kwargs):
+            result = await handle_api_playback(mock_bot, 2, "query")
+
+        assert result == expected_status
 
 
 class TestAfterPlaying:
@@ -133,11 +209,10 @@ class TestAfterPlaying:
         1. play_music이 호출되지 않음
         """
         guild = MagicMock(id=1)
-        member = MagicMock()
 
         with patch("discord.utils.get", return_value=None), \
                 patch("bot.music.play_music", new_callable=AsyncMock) as mock_play_music:
-            after_playing(mock_bot, guild, member)
+            after_playing(mock_bot, guild, 1)
             await asyncio.sleep(0.01)
 
         mock_play_music.assert_not_called()
@@ -151,16 +226,14 @@ class TestAfterPlaying:
         2. voice_client.disconnect가 호출됨
         3. play_music이 호출되지 않음
         """
-        guild = MagicMock(id=1)
-        member = MagicMock()
-        member.voice = None
+        guild = _make_guild(1, [])
 
         voice_client = voice_client_factory(is_connected=True)
 
         with patch("bot.music.guild_music_queues", {1: [{"title": "t"}]}) as mock_queues, \
                 patch("discord.utils.get", return_value=voice_client), \
                 patch("bot.music.play_music", new_callable=AsyncMock) as mock_play_music:
-            after_playing(mock_bot, guild, member)
+            after_playing(mock_bot, guild, 1)
             await asyncio.sleep(0.01)
 
         assert 1 not in mock_queues
@@ -168,7 +241,7 @@ class TestAfterPlaying:
         mock_play_music.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_empty_queue_sends_message_and_disconnects(self, mock_bot, voice_client_factory):
+    async def test_empty_queue_sends_message_and_disconnects(self, mock_bot, member_in_voice_channel, voice_client_factory):
         """[목적] 재생 후 대기열이 비어있으면 안내 메시지 전송 후 연결을 종료하는지 검증
 
         [검증]
@@ -176,18 +249,16 @@ class TestAfterPlaying:
         2. voice_client.disconnect가 호출됨
         3. guild_music_queues에서 해당 길드 큐가 제거됨
         """
-        guild = MagicMock(id=1)
-        member = MagicMock()
-        member.voice.channel.send = AsyncMock()
+        guild, _member, channel = member_in_voice_channel()
 
         voice_client = voice_client_factory(is_connected=True)
 
         with patch("bot.music.guild_music_queues", {1: []}) as mock_queues, \
                 patch("discord.utils.get", return_value=voice_client):
-            after_playing(mock_bot, guild, member)
+            after_playing(mock_bot, guild, 1)
             await asyncio.sleep(0.01)
 
-        member.voice.channel.send.assert_called_once_with("❌ 빈 대기열입니다. 재생을 종료합니다.")
+        channel.send.assert_called_once_with("❌ 빈 대기열입니다. 재생을 종료합니다.")
         voice_client.disconnect.assert_called_once()
         assert 1 not in mock_queues
 
@@ -197,26 +268,88 @@ class TestAfterPlaying:
         [None, Exception("ffmpeg crashed")],
         ids=["no_error", "with_error_still_schedules_next"],
     )
-    async def test_queue_has_songs_plays_next_regardless_of_error(self, mock_bot, voice_client_factory, error):
+    async def test_queue_has_songs_plays_next_regardless_of_error(
+        self, mock_bot, member_in_voice_channel, voice_client_factory, error
+    ):
         """[목적] 재생 후 대기열에 곡이 남아있으면 error 발생 여부와 무관하게 다음 곡을 재생하는지 검증
 
         [검증]
         1. error가 없을 때 play_music이 ctx 유지, is_refresh=True로 호출됨
         2. error가 전달되어도(로깅만 되고) play_music 호출은 동일하게 발생함
         """
-        guild = MagicMock(id=1)
-        member = MagicMock()
+        guild, _member, _channel = member_in_voice_channel()
         ctx = MagicMock()
 
         voice_client = voice_client_factory(is_connected=True)
 
         with patch("bot.music.guild_music_queues", {1: [{"title": "t"}]}), \
                 patch("discord.utils.get", return_value=voice_client), \
-                patch("bot.music.play_music", new_callable=AsyncMock) as mock_play_music:
-            after_playing(mock_bot, guild, member, ctx=ctx, error=error)
+                patch("bot.music.send_playback_failure", new_callable=AsyncMock), \
+                patch("bot.music.play_music", new_callable=AsyncMock, return_value=None) as mock_play_music:
+            after_playing(mock_bot, guild, 1, ctx=ctx, error=error)
             await asyncio.sleep(0.01)
 
-        mock_play_music.assert_called_once_with(mock_bot, guild, member, ctx=ctx, is_refresh=True)
+        mock_play_music.assert_called_once_with(mock_bot, guild, 1, ctx=ctx, is_refresh=True)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "error, expect_failure_sent",
+        [(Exception("ffmpeg crashed"), True), (None, False)],
+        ids=["with_error_sends_playback_failed", "no_error_sends_nothing"],
+    )
+    async def test_playback_error_publishes_playback_failed(
+        self, mock_bot, member_in_voice_channel, voice_client_factory, error, expect_failure_sent
+    ):
+        """[목적] 재생 중 error가 전달되면 playback_failed가 발행되는지 검증
+
+        [검증]
+        1. error가 있으면 user_id, bot.redis_client, "playback_failed"로 send_playback_failure가 호출됨
+        2. error가 없으면 send_playback_failure가 호출되지 않음
+        """
+        guild, _member, _channel = member_in_voice_channel()
+        voice_client = voice_client_factory(is_connected=True)
+
+        with patch("bot.music.guild_music_queues", {1: [{"title": "t"}]}), \
+                patch("discord.utils.get", return_value=voice_client), \
+                patch("bot.music.send_playback_failure", new_callable=AsyncMock) as mock_failure, \
+                patch("bot.music.play_music", new_callable=AsyncMock, return_value=None):
+            after_playing(mock_bot, guild, 1, error=error)
+            await asyncio.sleep(0.01)
+
+        if expect_failure_sent:
+            mock_failure.assert_called_once_with(1, mock_bot.redis_client, "playback_failed")
+        else:
+            mock_failure.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "play_music_kwargs, expected_status",
+        [
+            ({"return_value": "no_permission"}, "no_permission"),
+            ({"side_effect": Exception("boom")}, "playback_failed"),
+        ],
+        ids=["status_returned", "exception_raised"],
+    )
+    async def test_next_song_failure_publishes_status(
+        self, mock_bot, member_in_voice_channel, voice_client_factory, play_music_kwargs, expected_status
+    ):
+        """[목적] 다음 곡 재생이 실패하면 해당 status가 발행되는지 검증
+
+        [검증]
+        1. play_music이 status를 반환하면 그 status로 send_playback_failure가 호출됨
+        2. play_music이 예외를 던지면 "playback_failed"로 send_playback_failure가 호출됨
+        """
+        guild, _member, _channel = member_in_voice_channel()
+        voice_client = voice_client_factory(is_connected=True)
+
+        with patch("bot.music.guild_music_queues", {1: [{"title": "t"}]}), \
+                patch("discord.utils.get", return_value=voice_client), \
+                patch("bot.music.send_playback_failure", new_callable=AsyncMock) as mock_failure, \
+                patch("bot.music.play_music", new_callable=AsyncMock, **play_music_kwargs):
+            after_playing(mock_bot, guild, 1)
+            await asyncio.sleep(0.01)
+
+        mock_failure.assert_called_once_with(1, mock_bot.redis_client, expected_status)
 
 
 class TestPlayMusic:
@@ -232,9 +365,10 @@ class TestPlayMusic:
     async def test_no_permission_sends_guidance_and_returns_early(
         self, member_in_voice_channel, connect, speak, use_ctx
     ):
-        """[목적] 음성 채널 연결/발언 권한이 없으면 안내 메시지 전송 후 조기 종료되는지 검증
+        """[목적] 음성 채널 연결/발언 권한이 없으면 안내 메시지 전송 후 no_permission을 반환하며 조기 종료되는지 검증
 
         [검증]
+        0. "no_permission"을 반환함
         1. connect 권한이 없고 ctx 미제공 시 멤버의 음성 채널로 권한 안내 메시지가 전송됨
         2. speak 권한이 없고 ctx 제공 시 ctx로 권한 안내 메시지가 전송됨
         3. 두 경우 모두 voice_client 조회(discord.utils.get)가 호출되지 않음(조기 return)
@@ -245,8 +379,9 @@ class TestPlayMusic:
         ctx.send = AsyncMock()
 
         with patch("discord.utils.get") as mock_get:
-            await play_music(bot, guild, member, ctx=ctx if use_ctx else None, is_refresh=False)
+            result = await play_music(bot, guild, member.id, ctx=ctx if use_ctx else None, is_refresh=False)
 
+        assert result == "no_permission"
         target = ctx if use_ctx else channel
         target.send.assert_called_once_with("⛔ 해당 음성 채널에 연결 권한이 없습니다.")
         mock_get.assert_not_called()
@@ -266,7 +401,7 @@ class TestPlayMusic:
         with patch("bot.music.guild_music_queues", {}), \
                 patch("discord.utils.get", return_value=None), \
                 patch("bot.music.send_play_history", new_callable=AsyncMock) as mock_send_history:
-            await play_music(bot, guild, member, is_refresh=False)
+            await play_music(bot, guild, member.id, is_refresh=False)
 
         channel.connect.assert_called_once()
         mock_send_history.assert_not_called()
@@ -292,7 +427,7 @@ class TestPlayMusic:
                 patch("discord.FFmpegPCMAudio", return_value=MagicMock()), \
                 patch("discord.PCMVolumeTransformer", return_value=MagicMock()), \
                 patch("bot.music.send_play_history", new_callable=AsyncMock) as mock_send_history:
-            await play_music(mock_bot, guild, member, is_refresh=False)
+            await play_music(mock_bot, guild, member.id, is_refresh=False)
             await asyncio.sleep(0)
 
         channel.connect.assert_called_once()
@@ -318,7 +453,7 @@ class TestPlayMusic:
                 patch("discord.FFmpegPCMAudio", return_value=MagicMock()), \
                 patch("discord.PCMVolumeTransformer", return_value=MagicMock()), \
                 patch("bot.music.send_play_history", new_callable=AsyncMock):
-            await play_music(mock_bot, guild, member, is_refresh=False)
+            await play_music(mock_bot, guild, member.id, is_refresh=False)
             await asyncio.sleep(0)
 
         voice_client.move_to.assert_called_once_with(channel)
@@ -344,7 +479,7 @@ class TestPlayMusic:
                 patch("discord.FFmpegPCMAudio", return_value=MagicMock()), \
                 patch("discord.PCMVolumeTransformer", return_value=MagicMock()), \
                 patch("bot.music.send_play_history", new_callable=AsyncMock) as mock_send_history:
-            await play_music(mock_bot, guild, member, is_refresh=True)
+            await play_music(mock_bot, guild, member.id, is_refresh=True)
             await asyncio.sleep(0)
 
         mock_get_song_info.assert_called_once_with(
@@ -372,8 +507,55 @@ class TestPlayMusic:
                 patch("discord.FFmpegPCMAudio", return_value=MagicMock()), \
                 patch("discord.PCMVolumeTransformer", return_value=MagicMock()), \
                 patch("bot.music.send_play_history", new_callable=AsyncMock) as mock_send_history:
-            await play_music(mock_bot, guild, member, is_refresh=True)
+            await play_music(mock_bot, guild, member.id, is_refresh=True)
             await asyncio.sleep(0)
 
         channel.send.assert_called_once_with("🎶 재생중: **old**")
         mock_send_history.assert_called_once_with(old_song, 1, mock_bot.redis_client)
+
+    @pytest.mark.asyncio
+    async def test_user_not_in_voice_returns_without_action(self, mock_bot):
+        """[목적] 요청자가 길드의 음성 채널에 없으면 아무 동작 없이 종료되는지 검증
+
+        [검증]
+        1. None을 반환함
+        2. voice_client 조회(discord.utils.get)가 호출되지 않음
+        """
+        guild = _make_guild(1, [])
+
+        with patch("discord.utils.get") as mock_get:
+            result = await play_music(mock_bot, guild, 1, is_refresh=False)
+
+        assert result is None
+        mock_get.assert_not_called()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "use_ctx",
+        [False, True],
+        ids=["sends_to_member_channel", "sends_to_ctx_channel"],
+    )
+    async def test_connect_failure_sends_guidance_and_returns_connect_failed(
+        self, mock_bot, member_in_voice_channel, use_ctx
+    ):
+        """[목적] 음성 채널 연결에 실패하면 안내 메시지 전송 후 connect_failed를 반환하는지 검증
+
+        [검증]
+        1. "connect_failed"를 반환함
+        2. 안내 메시지가 전송됨
+        3. 재생 기록이 전송되지 않음
+        """
+        guild, member, channel = member_in_voice_channel()
+        channel.connect = AsyncMock(side_effect=Exception("timeout"))
+        ctx = MagicMock()
+        ctx.send = AsyncMock()
+
+        with patch("bot.music.guild_music_queues", {1: [{"title": "t", "source": "s", "video_id": "v"}]}), \
+                patch("discord.utils.get", return_value=None), \
+                patch("bot.music.send_play_history", new_callable=AsyncMock) as mock_send_history:
+            result = await play_music(mock_bot, guild, member.id, ctx=ctx if use_ctx else None, is_refresh=False)
+
+        assert result == "connect_failed"
+        target = ctx if use_ctx else channel
+        target.send.assert_called_once_with("⚠️ 음성 채널 연결에 실패했습니다.")
+        mock_send_history.assert_not_called()
