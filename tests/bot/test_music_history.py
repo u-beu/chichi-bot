@@ -61,21 +61,25 @@ class TestSendPlayHistory:
 
 class TestSendPlaybackFailure:
     @pytest.mark.asyncio
-    async def test_builds_not_in_voice_payload(self):
-        """[목적] 재생 실패 알림 payload 형식과 발행 키를 검증
+    @pytest.mark.parametrize(
+        "status",
+        ["not_in_voice", "video_too_long", "search_failed", "no_permission", "connect_failed", "playback_failed"],
+    )
+    async def test_builds_status_payload(self, status):
+        """[목적] 재생 실패 알림 payload 형식과 발행 키를 status별로 검증
 
         [검증]
         1. lpush가 SPRING_RESULT_QUEUE_KEY를 키로 호출됨
-        2. payload가 discordId와 status("not_in_voice")를 가짐
+        2. payload가 discordId와 전달받은 status를 가짐
         """
         redis_client = AsyncMock()
 
-        await send_playback_failure(123, redis_client)
+        await send_playback_failure(123, redis_client, status)
 
         redis_client.lpush.assert_called_once()
         key, payload_json = redis_client.lpush.call_args[0]
         assert key == SPRING_RESULT_QUEUE_KEY
-        assert json.loads(payload_json) == {"discordId": 123, "status": "not_in_voice"}
+        assert json.loads(payload_json) == {"discordId": 123, "status": status}
 
     @pytest.mark.asyncio
     async def test_exception_is_swallowed(self):
@@ -87,4 +91,4 @@ class TestSendPlaybackFailure:
         redis_client = AsyncMock()
         redis_client.lpush.side_effect = Exception("redis down")
 
-        await send_playback_failure(1, redis_client)
+        await send_playback_failure(1, redis_client, "not_in_voice")

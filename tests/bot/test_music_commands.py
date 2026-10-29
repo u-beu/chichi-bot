@@ -124,7 +124,7 @@ class TestCogPlay:
 
         assert mock_queues[1][0]["title"] == "T"
         mock_ctx.send.assert_called_once_with("▶️ 즉시 재생합니다.")
-        mock_play_music.assert_called_once_with(bot, mock_ctx.guild, mock_ctx.author, ctx=mock_ctx, is_refresh=False)
+        mock_play_music.assert_called_once_with(bot, mock_ctx.guild, mock_ctx.author.id, ctx=mock_ctx, is_refresh=False)
 
 
 class TestCogSkip:
@@ -219,7 +219,7 @@ class TestCogResume:
 
         mock_ctx.send.assert_called_once_with(expected_message)
         if expect_play_called:
-            mock_play_music.assert_called_once_with(bot, mock_ctx.guild, mock_ctx.author, ctx=mock_ctx, is_refresh=True)
+            mock_play_music.assert_called_once_with(bot, mock_ctx.guild, mock_ctx.author.id, ctx=mock_ctx, is_refresh=True)
         else:
             mock_play_music.assert_not_called()
 

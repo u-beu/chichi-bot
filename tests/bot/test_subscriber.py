@@ -43,33 +43,33 @@ class TestProcessCommand:
         bot = MagicMock()
         payload = json.dumps(payload_dict)
 
-        with patch("bot.subscriber.handle_api_playback", new_callable=AsyncMock, return_value=True) as mock_handle:
+        with patch("bot.subscriber.handle_api_playback", new_callable=AsyncMock, return_value=None) as mock_handle:
             await _process_command(bot, payload)
 
         mock_handle.assert_called_once_with(bot, *expected_args)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
-        "handled, expect_failure_sent",
-        [(False, True), (True, False)],
-        ids=["not_in_voice_sends_failure", "handled_sends_nothing"],
+        "status, expect_failure_sent",
+        [("not_in_voice", True), ("search_failed", True), (None, False)],
+        ids=["not_in_voice_sends_failure", "search_failed_sends_failure", "handled_sends_nothing"],
     )
-    async def test_failure_notification_depends_on_handle_result(self, handled, expect_failure_sent):
-        """[목적] handle_api_playback 결과에 따라 실패 알림 발행 여부가 달라지는지 검증
+    async def test_failure_notification_depends_on_handle_result(self, status, expect_failure_sent):
+        """[목적] handle_api_playback이 반환한 실패 status에 따라 실패 알림 발행 여부가 달라지는지 검증
 
         [검증]
-        1. False(음성 채널 미접속)이면 user_id와 bot.redis_client로 send_playback_failure가 호출됨
-        2. True(처리됨)이면 send_playback_failure가 호출되지 않음
+        1. status 문자열이 반환되면 user_id, bot.redis_client, 해당 status로 send_playback_failure가 호출됨
+        2. None(처리됨)이면 send_playback_failure가 호출되지 않음
         """
         bot = MagicMock()
         payload = json.dumps({"action": "playback", "user_id": "2", "query": "song"})
 
-        with patch("bot.subscriber.handle_api_playback", new_callable=AsyncMock, return_value=handled), \
+        with patch("bot.subscriber.handle_api_playback", new_callable=AsyncMock, return_value=status), \
                 patch("bot.subscriber.send_playback_failure", new_callable=AsyncMock) as mock_failure:
             await _process_command(bot, payload)
 
         if expect_failure_sent:
-            mock_failure.assert_called_once_with(2, bot.redis_client)
+            mock_failure.assert_called_once_with(2, bot.redis_client, status)
         else:
             mock_failure.assert_not_called()
 
