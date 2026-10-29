@@ -37,8 +37,8 @@ async def _process_command(bot, payload: str):
         logger.warning(f"에러 발생: 부적절한 입력: {e}")
         return
 
-    if not await handle_api_playback(bot, user_id, query):
-        await send_playback_failure(user_id, bot.redis_client)
+    if status := await handle_api_playback(bot, user_id, query):
+        await send_playback_failure(user_id, bot.redis_client, status)
 
 
 async def _requeue_processing(client):
