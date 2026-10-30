@@ -62,6 +62,9 @@
   3. **Scope Verification:** 코드 작성 후 오직 요청한 사항만 수정되었는지 최종 검증
 - **Branching & Workflow:** 작업 시작 전 [docs/branching.md](docs/branching.md) 규칙(`<type>/<issue-number>-<description>`, 이슈가 없으면 `<type>/<description>`)에 따라 새 Branch 생성 및 이동 (`main` 브랜치 직접 작업 금지)
 
+## Code Modification Rules
+- 모든 소스 코드 수정(`Edit` 또는 `Write`) 전, 반드시 변경 내용(Diff)을 먼저 제시하고 사용자 승인을 받고 진행
+
 ## Output Style
 - 서론/군더더기 없이 핵심 위주로 직관적이고 간결하게 답변
 - 한국어로 항상 답변
