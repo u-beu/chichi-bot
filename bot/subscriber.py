@@ -31,14 +31,14 @@ async def _process_command(bot, payload: str):
         return
 
     try:
-        user_id = int(data["user_id"])
+        discord_id = int(data["discordId"])
         query = data.get("query", "")
     except (KeyError, TypeError, ValueError) as e:
         logger.warning(f"에러 발생: 부적절한 입력: {e}")
         return
 
-    if status := await handle_api_playback(bot, user_id, query):
-        await send_playback_failure(user_id, bot.redis_client, status)
+    if status := await handle_api_playback(bot, discord_id, query):
+        await send_playback_failure(discord_id, bot.redis_client, status)
 
 
 async def _requeue_processing(client):
