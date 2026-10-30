@@ -101,15 +101,15 @@ async def send_playback_failure(discord_id: int, redis_client, status: str):
         logger.exception("예외 발생: %s", e)
 
 
-def find_voice_channel(guild: discord.Guild, user_id: int):
-    return next((vc for vc in guild.voice_channels if user_id in vc.voice_states), None)
+def find_voice_channel(guild: discord.Guild, discord_id: int):
+    return next((vc for vc in guild.voice_channels if discord_id in vc.voice_states), None)
 
 
-async def handle_api_playback(bot: commands.Bot, user_id: int, query: str) -> Optional[str]:
+async def handle_api_playback(bot: commands.Bot, discord_id: int, query: str) -> Optional[str]:
     """재생 처리에 실패하면 실패 status(문자열)를, 성공하면 None을 반환."""
-    guild = next((g for g in bot.guilds if find_voice_channel(g, user_id)), None)
+    guild = next((g for g in bot.guilds if find_voice_channel(g, discord_id)), None)
     if not guild:
-        logger.info(f"handle api playback 음성 채널 접속 길드 없음: {user_id}")
+        logger.info(f"handle api playback 음성 채널 접속 길드 없음: {discord_id}")
         return "not_in_voice"
 
     loop= bot.loop or asyncio.get_running_loop()
@@ -121,8 +121,8 @@ async def handle_api_playback(bot: commands.Bot, user_id: int, query: str) -> Op
         logger.exception("예외 발생: 곡 정보 조회 실패: %s", query)
         return "search_failed"
 
-    if not find_voice_channel(guild, user_id):
-        logger.info(f"handle api playback 검색 중 음성 채널 이탈: {user_id}")
+    if not find_voice_channel(guild, discord_id):
+        logger.info(f"handle api playback 검색 중 음성 채널 이탈: {discord_id}")
         return "not_in_voice"
 
     queue = guild_music_queues.setdefault(guild.id, [])
@@ -134,25 +134,25 @@ async def handle_api_playback(bot: commands.Bot, user_id: int, query: str) -> Op
         return None
 
     try:
-        return await play_music(bot, guild, user_id, is_refresh=False)
+        return await play_music(bot, guild, discord_id, is_refresh=False)
     except Exception:
         logger.exception("예외 발생: 재생 시작 실패")
         return "playback_failed"
 
 
-def after_playing(bot: commands.Bot, guild: discord.Guild, user_id: int, ctx: commands.Context=None, error=None):
+def after_playing(bot: commands.Bot, guild: discord.Guild, discord_id: int, ctx: commands.Context=None, error=None):
     if error:
         logger.error("에러 발생: %s", error, exc_info=error)
 
     async def next():
         if error:
-            await send_playback_failure(user_id, bot.redis_client, "playback_failed")
+            await send_playback_failure(discord_id, bot.redis_client, "playback_failed")
 
         voice_client = discord.utils.get(bot.voice_clients, guild=guild)
         if not voice_client or not voice_client.is_connected():
             return 
         
-        member_voice_channel = find_voice_channel(guild, user_id)
+        member_voice_channel = find_voice_channel(guild, discord_id)
         if not member_voice_channel:
             guild_music_queues.pop(guild.id, None)
             await voice_client.disconnect()
@@ -170,20 +170,20 @@ def after_playing(bot: commands.Bot, guild: discord.Guild, user_id: int, ctx: co
             return
 
         try:
-            status = await play_music(bot, guild, user_id, ctx=ctx, is_refresh=True)
+            status = await play_music(bot, guild, discord_id, ctx=ctx, is_refresh=True)
         except Exception:
             logger.exception("예외 발생: 다음 곡 재생 실패")
             status = "playback_failed"
         if status:
-            await send_playback_failure(user_id, bot.redis_client, status)
+            await send_playback_failure(discord_id, bot.redis_client, status)
 
     asyncio.run_coroutine_threadsafe(next(), bot.loop)
 
 
-async def play_music(bot: commands.Bot, guild: discord.Guild, user_id: int, ctx: commands.Context=None, *, is_refresh: bool) -> Optional[str]:
+async def play_music(bot: commands.Bot, guild: discord.Guild, discord_id: int, ctx: commands.Context=None, *, is_refresh: bool) -> Optional[str]:
     """재생을 시작하지 못한 사유가 있으면 실패 status(문자열)를 반환."""
 
-    member_voice_channel = find_voice_channel(guild, user_id)
+    member_voice_channel = find_voice_channel(guild, discord_id)
     if not member_voice_channel:
         return
 
@@ -219,10 +219,10 @@ async def play_music(bot: commands.Bot, guild: discord.Guild, user_id: int, ctx:
         except Exception as e:
             logger.exception("예외 발생: 음원 정보 갱신 실패: %s", e)
 
-    asyncio.create_task(send_play_history(song, user_id, bot.redis_client))
+    asyncio.create_task(send_play_history(song, discord_id, bot.redis_client))
     source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(song['source'], **FFMPEG_OPTIONS))
 
-    voice_client.play(source, after=lambda e: after_playing(bot, guild, user_id, ctx, e))
+    voice_client.play(source, after=lambda e: after_playing(bot, guild, discord_id, ctx, e))
     
     target_channel = ctx if ctx else member_voice_channel
     try:
