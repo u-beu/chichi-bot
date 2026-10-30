@@ -16,7 +16,7 @@
   - 처리 중 예외는 로그 후 `LREM`(재시작마다 재처리 방지), 종료(취소)·크래시는 `LREM`하지 않아 다음 기동 때 재처리됨
   - at-least-once: `LREM` 직전 크래시 시 같은 요청이 한 번 더 처리되어 같은 곡이 중복 재생될 수 있음 (알려진 한계)
 - **Queue Schema (Redis List):**
-  - 요청: `bot:commands` (`BOT_QUEUE_KEY`) <- `{"action": "playback", "user_id", "query"}` (길드는 `user_id`가 음성 채널에 접속한 길드를 `bot.guilds`에서 탐색)
+  - 요청: `bot:commands` (`BOT_QUEUE_KEY`) <- `{"action": "playback", "discordId", "query"}`
   - 발행: `spring:play-history` (`SPRING_QUEUE_KEY`) -> `{"title", "uploader", "image", "videoId", "discordId"}`
   - 발행: `spring:play-result` (`SPRING_RESULT_QUEUE_KEY`) -> `{"discordId", "status"}` (재생 실패 시 발행, `status`는 아래 6종)
     - `not_in_voice`: 요청 시점 또는 검색 직후 사용자가 어느 길드의 음성 채널에도 없음
@@ -25,8 +25,8 @@
     - `no_permission`: 봇의 음성 채널 connect/speak 권한 없음
     - `connect_failed`: 음성 채널 `connect()`/`move_to()` 실패
     - `playback_failed`: 재생 시작 중 예외 또는 재생 중 ffmpeg 오류(`after` 콜백의 `error`, discord.py 2.7+에서 비정상 종료가 전달됨)
-    - 재생 중 실패(`no_permission`·`connect_failed`·`playback_failed`)는 요청 출처(API/`!play`)를 구분하지 않고 해당 재생의 `user_id`로 발행
-  - JSON 형식 오류, 미등록 `action`, `user_id` 누락·부적합 요청은 경고 로그 후 폐기
+    - 재생 중 실패(`no_permission`·`connect_failed`·`playback_failed`)는 요청 출처(API/`!play`)를 구분하지 않고 해당 재생의 `discordId`로 발행
+  - JSON 형식 오류, 미등록 `action`, `discordId` 누락·부적합 요청은 경고 로그 후 폐기
 - **Environment Variables:**
   - `DISCORD_TOKEN`: Discord bot 토큰
   - `BOT_QUEUE_KEY`: 요청 큐 키 (기본값 `bot:commands`)
