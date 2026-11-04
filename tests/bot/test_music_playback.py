@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 
-from bot.music import VideoTooLongError, after_playing, handle_api_playback, play_music
+from bot.music import FFMPEG_OPTIONS, VideoTooLongError, after_playing, handle_api_playback, play_music
 
 
 def _make_guild(guild_id, voice_user_ids):
@@ -559,3 +559,17 @@ class TestPlayMusic:
         target = ctx if use_ctx else channel
         target.send.assert_called_once_with("⚠️ 음성 채널 연결에 실패했습니다.")
         mock_send_history.assert_not_called()
+
+
+class TestFfmpegOptions:
+    def test_options_have_no_pcm_conflicting_flags(self):
+        """[목적] FFmpegPCMAudio가 부여하는 옵션과 충돌하는 플래그가 제거되었는지 회귀 검증 (#58)
+
+        [검증]
+        1. libopus 코덱 지정이 없음 (-f s16le 충돌, ffmpeg 종료 코드 234)
+        2. -ar, -ac, -b:a 옵션이 없음
+        """
+        options = FFMPEG_OPTIONS['options']
+
+        for forbidden in ("libopus", "-ar", "-ac", "-b:a"):
+            assert forbidden not in options
