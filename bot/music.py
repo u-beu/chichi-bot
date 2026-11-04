@@ -20,7 +20,7 @@ YDL_OPTIONS = {
     'noplaylist': True,
     'extractor_args': {
         'youtube': {
-            'player_client': ['android', 'web']
+            'player_client': ['tv_embedded', 'web']
         }
     }
 }
