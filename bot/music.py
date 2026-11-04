@@ -30,11 +30,7 @@ FFMPEG_OPTIONS = {
     ),
     'options': (
         '-vn '
-        '-b:a 192k '
-        '-bufsize 128k '
-        '-ar 48000 '
-        '-ac 2 '
-        '-c:a libopus'
+        '-bufsize 128k'
     )
 }
 
