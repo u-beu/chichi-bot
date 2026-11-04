@@ -42,7 +42,7 @@ class TestHandleApiPlayback:
         [검증]
         1. None(성공)을 반환함
         2. 접속한 길드의 큐에만 song이 추가됨
-        3. play_music이 접속한 길드와 user_id로 호출됨
+        3. play_music이 접속한 길드와 discord_id로 호출됨
         """
         other_guild = _make_guild(1, [])
         target_guild = _make_guild(5, [2])
@@ -60,11 +60,11 @@ class TestHandleApiPlayback:
 
     @pytest.mark.asyncio
     async def test_member_cache_miss_does_not_fetch_member(self, mock_bot):
-        """[목적] 멤버 캐시에 없어도 voice_states의 user_id만으로 재생이 진행되는지 검증
+        """[목적] 멤버 캐시에 없어도 voice_states의 discord_id만으로 재생이 진행되는지 검증
 
         [검증]
         1. get_member가 None을 반환해도 guild.fetch_member가 호출되지 않음
-        2. play_music이 user_id로 호출됨
+        2. play_music이 discord_id로 호출됨
         """
         guild = _make_guild(1, [2])
         guild.get_member.return_value = None
@@ -303,7 +303,7 @@ class TestAfterPlaying:
         """[목적] 재생 중 error가 전달되면 playback_failed가 발행되는지 검증
 
         [검증]
-        1. error가 있으면 user_id, bot.redis_client, "playback_failed"로 send_playback_failure가 호출됨
+        1. error가 있으면 discord_id, bot.redis_client, "playback_failed"로 send_playback_failure가 호출됨
         2. error가 없으면 send_playback_failure가 호출되지 않음
         """
         guild, _member, _channel = member_in_voice_channel()

@@ -28,8 +28,8 @@ class TestProcessCommand:
     @pytest.mark.parametrize(
         "payload_dict, expected_args",
         [
-            ({"action": "playback", "user_id": "2", "query": "song"}, (2, "song")),
-            ({"action": "playback", "user_id": "2"}, (2, "")),
+            ({"action": "playback", "discordId": "2", "query": "song"}, (2, "song")),
+            ({"action": "playback", "discordId": "2"}, (2, "")),
         ],
         ids=["valid_payload_with_query", "valid_payload_defaults_query_to_empty_string"],
     )
@@ -58,11 +58,11 @@ class TestProcessCommand:
         """[목적] handle_api_playback이 반환한 실패 status에 따라 실패 알림 발행 여부가 달라지는지 검증
 
         [검증]
-        1. status 문자열이 반환되면 user_id, bot.redis_client, 해당 status로 send_playback_failure가 호출됨
+        1. status 문자열이 반환되면 discord_id, bot.redis_client, 해당 status로 send_playback_failure가 호출됨
         2. None(처리됨)이면 send_playback_failure가 호출되지 않음
         """
         bot = MagicMock()
-        payload = json.dumps({"action": "playback", "user_id": "2", "query": "song"})
+        payload = json.dumps({"action": "playback", "discordId": "2", "query": "song"})
 
         with patch("bot.subscriber.handle_api_playback", new_callable=AsyncMock, return_value=status), \
                 patch("bot.subscriber.send_playback_failure", new_callable=AsyncMock) as mock_failure:
@@ -80,9 +80,9 @@ class TestProcessCommand:
             "not-json",
             json.dumps({"action": "unknown"}),
             json.dumps({"action": "playback"}),
-            json.dumps({"action": "playback", "user_id": "not-a-number"}),
+            json.dumps({"action": "playback", "discordId": "not-a-number"}),
         ],
-        ids=["invalid_json", "unregistered_action", "missing_user_id", "invalid_user_id_type"],
+        ids=["invalid_json", "unregistered_action", "missing_discord_id", "invalid_discord_id_type"],
     )
     async def test_invalid_or_unregistered_payload_is_ignored(self, payload):
         """[목적] JSON 파싱 실패/미등록 action/필수 필드 누락/타입 오류 payload가 모두 무시되는지 검증
