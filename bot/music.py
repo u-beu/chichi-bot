@@ -14,11 +14,12 @@ SPRING_QUEUE_KEY = os.getenv("SPRING_QUEUE_KEY", "spring:play-history")
 SPRING_RESULT_QUEUE_KEY = os.getenv("SPRING_RESULT_QUEUE_KEY", "spring:play-result")
 MAX_DURATION = 7200
 YDL_OPTIONS = {
-    'format': 'bestaudio/best',
+    'format': 'b[protocol=m3u8_native][height<=360]/w[protocol=m3u8_native]/bestaudio/best',
     'quiet': True,
     'default_search': 'ytsearch',
     'noplaylist': True,
-    'extract_audio': True
+    'extract_audio': True,
+    'extractor_args': {'youtube': {'player_client': ['web_embedded']}}
 }
 FFMPEG_OPTIONS = {
     'before_options': (
