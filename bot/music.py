@@ -15,6 +15,10 @@ SPRING_RESULT_QUEUE_KEY = os.getenv("SPRING_RESULT_QUEUE_KEY", "spring:play-resu
 MAX_DURATION = 7200
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
+    'postprocessors': [{
+        'key': 'FFmpegExtractAudio',
+        'preferredcodec': 'opus',
+    }],
     'quiet': True,
     'default_search': 'ytsearch',
     'noplaylist': True,
@@ -31,6 +35,9 @@ FFMPEG_OPTIONS = {
     ),
     'options': (
         '-vn '
+        '-acodec pcm_s16le '
+        '-ar 48000 '
+        '-ac 2 '
         '-bufsize 128k'
     )
 }
