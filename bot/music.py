@@ -35,9 +35,6 @@ FFMPEG_OPTIONS = {
     ),
     'options': (
         '-vn '
-        '-acodec pcm_s16le '
-        '-ar 48000 '
-        '-ac 2 '
         '-bufsize 128k'
     )
 }
