@@ -15,14 +15,14 @@ SPRING_RESULT_QUEUE_KEY = os.getenv("SPRING_RESULT_QUEUE_KEY", "spring:play-resu
 MAX_DURATION = 7200
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
-    'postprocessors': [{
-        'key': 'FFmpegExtractAudio',
-        'preferredcodec': 'opus',
-    }],
     'quiet': True,
     'default_search': 'ytsearch',
     'noplaylist': True,
-    'extractor_args': {'youtube': {'player_client': ['web_embedded']}}
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['android', 'web']
+        }
+    }
 }
 FFMPEG_OPTIONS = {
     'before_options': (
