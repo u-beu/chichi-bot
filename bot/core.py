@@ -11,6 +11,7 @@ logging.basicConfig(level=logging.INFO)
 logging.getLogger("discord.voice_state").setLevel(logging.DEBUG)
 logging.getLogger("discord.voice_client").setLevel(logging.DEBUG)
 logging.getLogger("discord.player").setLevel(logging.DEBUG)
+logging.getLogger("discord.gateway").setLevel(logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
