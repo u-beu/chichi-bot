@@ -18,11 +18,6 @@ YDL_OPTIONS = {
     'quiet': True,
     'default_search': 'ytsearch',
     'noplaylist': True,
-    'extractor_args': {
-        'youtube': {
-            'player_client': ['tv_embedded', 'web']
-        }
-    }
 }
 FFMPEG_OPTIONS = {
     'before_options': (
