@@ -219,12 +219,7 @@ async def play_music(bot: commands.Bot, guild: discord.Guild, discord_id: int, c
     source = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(song['source'], **FFMPEG_OPTIONS))
 
     voice_client.play(source, after=lambda e: after_playing(bot, guild, discord_id, ctx, e))
-    bot.loop.call_later(3, lambda: logger.info(
-        "DAVE 상태: version=%s can_encrypt=%s privacy_code=%s",
-        voice_client._connection.dave_protocol_version,
-        voice_client._connection.can_encrypt,
-        voice_client.voice_privacy_code))
-
+    
     target_channel = ctx if ctx else member_voice_channel
     try:
         await target_channel.send(f"🎶 재생중: **{song['title']}**")
