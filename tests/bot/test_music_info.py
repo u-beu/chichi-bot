@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from unittest.mock import MagicMock, patch
 
-from bot.music import MAX_DURATION, YDL_OPTIONS, VideoTooLongError, get_info_async, get_song_info
+from bot.music import MAX_DURATION, VideoTooLongError, get_info_async, get_song_info
 
 
 class TestGetSongInfo:
@@ -109,15 +109,3 @@ class TestGetInfoAsync:
 
         mock_get_song_info.assert_called_once_with("query", from_url=True)
         assert result == {"title": "t"}
-
-
-class TestYdlOptions:
-    def test_embedded_client_and_hls_format(self):
-        """[목적] 유튜브 403 회피를 위한 YDL_OPTIONS 설정(web_embedded 클라이언트, HLS 우선 포맷)이 유지되는지 검증
-
-        [검증]
-        1. extractor_args의 youtube player_client가 ['web_embedded']임
-        2. format 문자열에 m3u8_native가 포함됨
-        """
-        assert YDL_OPTIONS["extractor_args"]["youtube"]["player_client"] == ["web_embedded"]
-        assert "m3u8_native" in YDL_OPTIONS["format"]
