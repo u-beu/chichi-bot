@@ -10,8 +10,8 @@ from discord.ext import commands
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-SPRING_QUEUE_KEY = os.getenv("SPRING_QUEUE_KEY", "spring:play-history")
-SPRING_RESULT_QUEUE_KEY = os.getenv("SPRING_RESULT_QUEUE_KEY", "spring:play-result")
+SPRING_PLAY_HISTORY_QUEUE_KEY = os.getenv("SPRING_PLAY_HISTORY_QUEUE_KEY", "spring:play-history")
+SPRING_PLAYBACK_FAILURE_QUEUE_KEY = os.getenv("SPRING_PLAYBACK_FAILURE_QUEUE_KEY", "spring:playback-failure")
 MAX_DURATION = 7200
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
@@ -78,7 +78,7 @@ async def send_play_history(song: dict, discord_id: int, redis_client):
     }
 
     try:
-        await redis_client.lpush(SPRING_QUEUE_KEY, json.dumps(data))
+        await redis_client.lpush(SPRING_PLAY_HISTORY_QUEUE_KEY, json.dumps(data))
         logger.info(f"Redis 전송 성공: {song['title']}")
     except Exception as e:
         logger.exception("예외 발생: %s", e)
@@ -91,7 +91,7 @@ async def send_playback_failure(discord_id: int, redis_client, status: str):
     }
 
     try:
-        await redis_client.lpush(SPRING_RESULT_QUEUE_KEY, json.dumps(data))
+        await redis_client.lpush(SPRING_PLAYBACK_FAILURE_QUEUE_KEY, json.dumps(data))
         logger.info(f"Redis 재생 실패 전송 성공: {discord_id} ({status})")
     except Exception as e:
         logger.exception("예외 발생: %s", e)

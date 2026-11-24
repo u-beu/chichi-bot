@@ -17,8 +17,8 @@
   - at-least-once: `LREM` 직전 크래시 시 같은 요청이 한 번 더 처리되어 같은 곡이 중복 재생될 수 있음 (알려진 한계)
 - **Queue Schema (Redis List):**
   - 요청: `bot:commands` (`BOT_QUEUE_KEY`) <- `{"action": "playback", "discordId", "query"}`
-  - 발행: `spring:play-history` (`SPRING_QUEUE_KEY`) -> `{"title", "uploader", "image", "videoId", "discordId"}`
-  - 발행: `spring:play-result` (`SPRING_RESULT_QUEUE_KEY`) -> `{"discordId", "status"}` (재생 실패 시 발행, `status`는 아래 6종)
+  - 발행: `spring:play-history` (`SPRING_PLAY_HISTORY_QUEUE_KEY`) -> `{"title", "uploader", "image", "videoId", "discordId"}`
+  - 발행: `spring:playback-failure` (`SPRING_PLAYBACK_FAILURE_QUEUE_KEY`) -> `{"discordId", "status"}` (API 재생 요청 실패 시 발행, `status`는 아래 6종)
     - `not_in_voice`: 요청 시점 또는 검색 직후 사용자가 어느 길드의 음성 채널에도 없음
     - `video_too_long`: 영상 길이가 `MAX_DURATION`(2시간) 초과
     - `search_failed`: 그 외 곡 정보 조회 실패(검색 결과 없음, yt-dlp 오류, 라이브 영상 등)
@@ -30,8 +30,8 @@
 - **Environment Variables:**
   - `DISCORD_TOKEN`: Discord bot 토큰
   - `BOT_QUEUE_KEY`: 요청 큐 키 (기본값 `bot:commands`)
-  - `SPRING_QUEUE_KEY`: 재생 기록 발행 큐 키 (기본값 `spring:play-history`)
-  - `SPRING_RESULT_QUEUE_KEY`: 재생 실패 알림 발행 큐 키 (기본값 `spring:play-result`)
+  - `SPRING_PLAY_HISTORY_QUEUE_KEY`: 재생 기록 발행 큐 키 (기본값 `spring:play-history`)
+  - `SPRING_PLAYBACK_FAILURE_QUEUE_KEY`: API 재생(playback) 요청 실패 결과 발행 큐 키 (기본값 `spring:playback-failure`)
   - `main.py`가 `load_dotenv()`를 먼저 호출한 뒤 `bot` 모듈을 import (모듈 레벨 `os.getenv`가 `.env`를 읽도록)
 - **Metadata Sync:** `chichi` (Spring Boot) 백엔드로의 재생 상태/메타데이터 전달 시 Redis 메시지 버스 활용
 - **Audio Streaming:**

@@ -3,7 +3,7 @@ import json
 import pytest
 from unittest.mock import AsyncMock
 
-from bot.music import SPRING_QUEUE_KEY, SPRING_RESULT_QUEUE_KEY, send_play_history, send_playback_failure
+from bot.music import SPRING_PLAY_HISTORY_QUEUE_KEY, SPRING_PLAYBACK_FAILURE_QUEUE_KEY, send_play_history, send_playback_failure
 
 
 class TestSendPlayHistory:
@@ -34,7 +34,7 @@ class TestSendPlayHistory:
         [검증]
         1. 모든 필드가 있을 때 title/uploader/image/videoId/discordId로 그대로 매핑됨
         2. 필드가 없을 때 title/uploader/image/videoId에 기본값이 채워짐
-        3. 두 경우 모두 lpush가 SPRING_QUEUE_KEY를 키로 호출됨
+        3. 두 경우 모두 lpush가 SPRING_PLAY_HISTORY_QUEUE_KEY를 키로 호출됨
         """
         redis_client = AsyncMock()
 
@@ -42,7 +42,7 @@ class TestSendPlayHistory:
 
         redis_client.lpush.assert_called_once()
         key, payload_json = redis_client.lpush.call_args[0]
-        assert key == SPRING_QUEUE_KEY
+        assert key == SPRING_PLAY_HISTORY_QUEUE_KEY
         assert json.loads(payload_json) == expected_payload
 
     @pytest.mark.asyncio
@@ -69,7 +69,7 @@ class TestSendPlaybackFailure:
         """[목적] 재생 실패 알림 payload 형식과 발행 키를 status별로 검증
 
         [검증]
-        1. lpush가 SPRING_RESULT_QUEUE_KEY를 키로 호출됨
+        1. lpush가 SPRING_PLAYBACK_FAILURE_QUEUE_KEY를 키로 호출됨
         2. payload가 discordId와 전달받은 status를 가짐
         """
         redis_client = AsyncMock()
@@ -78,7 +78,7 @@ class TestSendPlaybackFailure:
 
         redis_client.lpush.assert_called_once()
         key, payload_json = redis_client.lpush.call_args[0]
-        assert key == SPRING_RESULT_QUEUE_KEY
+        assert key == SPRING_PLAYBACK_FAILURE_QUEUE_KEY
         assert json.loads(payload_json) == {"discordId": 123, "status": status}
 
     @pytest.mark.asyncio
