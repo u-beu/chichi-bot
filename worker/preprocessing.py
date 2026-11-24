@@ -32,8 +32,8 @@ def load_audio(source_url: str, *, duration: float = MAX_DURATION_SEC, sr: int =
     직접 열어 librosa.load에 전달해 스트리밍 URL을 강제로 ffmpeg가 디코딩하게 한다.
     """
     try:
-        reader = audioread.ffdec.FFmpegAudioFile(source_url)
-        y, _ = librosa.load(reader, duration=duration, sr=sr, mono=True)
+        with audioread.ffdec.FFmpegAudioFile(source_url) as reader:
+            y, _ = librosa.load(reader, duration=duration, sr=sr, mono=True)
     except Exception as e:
         # 서명된 스트리밍 URL이 결과 큐/로그로 새지 않도록 메시지를 마스킹하고 원본 예외 체인은 끊는다.
         raise AudioDecodingError(f"오디오 로드 실패(네트워크 또는 디코딩 오류): {URL_PATTERN.sub('<url>', str(e))}") from None
