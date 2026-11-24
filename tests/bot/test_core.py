@@ -18,7 +18,7 @@ class TestChichiBot:
         """[목적] setup_hook 호출 시 redis_client를 생성하고 MusicCog를 등록하는지 검증
 
         [검증]
-        1. redis_asyncio.from_url이 decode_responses=True로 호출됨
+        1. redis_asyncio.from_url이 decode_responses=True, health_check_interval=30, socket_keepalive=True로 호출됨
         2. bot.redis_client가 생성된 클라이언트로 설정됨
         3. add_cog가 호출되고 등록된 cog의 bot 참조가 올바름
         """
@@ -31,7 +31,7 @@ class TestChichiBot:
 
         mock_from_url.assert_called_once()
         _, kwargs = mock_from_url.call_args
-        assert kwargs == {"decode_responses": True}
+        assert kwargs == {"decode_responses": True, "health_check_interval": 30, "socket_keepalive": True}
         assert bot.redis_client is fake_redis_client
 
         mock_add_cog.assert_called_once()
