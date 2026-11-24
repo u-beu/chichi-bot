@@ -25,7 +25,7 @@ class ChichiBot(commands.Bot):
         self.redis_client: redis_asyncio.Redis | None = None
 
     async def setup_hook(self):
-        self.redis_client = redis_asyncio.from_url(REDIS_URL, decode_responses=True)
+        self.redis_client = redis_asyncio.from_url(REDIS_URL, decode_responses=True, health_check_interval=30, socket_keepalive=True)
         await self.add_cog(MusicCog(self))
 
     async def close(self):

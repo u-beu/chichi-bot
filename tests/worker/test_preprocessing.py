@@ -19,8 +19,9 @@ class TestLoadAudio:
         """
         fake_y = np.zeros(1000, dtype=np.float64)
         fake_reader = object()
-        with patch("worker.preprocessing.audioread.ffdec.FFmpegAudioFile", return_value=fake_reader) as mock_ffdec, \
+        with patch("worker.preprocessing.audioread.ffdec.FFmpegAudioFile") as mock_ffdec, \
                 patch("worker.preprocessing.librosa.load", return_value=(fake_y, 16000)) as mock_load:
+            mock_ffdec.return_value.__enter__.return_value = fake_reader
             result = load_audio("https://stream.example.com/audio")
 
         mock_ffdec.assert_called_once_with("https://stream.example.com/audio")
@@ -36,7 +37,7 @@ class TestLoadAudio:
         3. 원본 예외 체인이 차단됨(__cause__ 없음, __suppress_context__)
         """
         original = Exception("디코딩 실패: https://stream.example.com/audio?sig=secret")
-        with patch("worker.preprocessing.audioread.ffdec.FFmpegAudioFile", return_value=object()), \
+        with patch("worker.preprocessing.audioread.ffdec.FFmpegAudioFile"), \
                 patch("worker.preprocessing.librosa.load", side_effect=original):
             with pytest.raises(AudioDecodingError) as exc_info:
                 load_audio("https://stream.example.com/audio?sig=secret")
@@ -46,6 +47,23 @@ class TestLoadAudio:
         assert "<url>" in str(exc_info.value)
         assert exc_info.value.__cause__ is None
         assert exc_info.value.__suppress_context__
+
+    @pytest.mark.parametrize("load_side_effect", [None, Exception("boom")], ids=["success", "load_fails"])
+    def test_closes_reader_on_success_and_failure(self, load_side_effect):
+        """[목적] 정상/예외 어느 경우에도 ffmpeg reader가 닫히는지 검증
+
+        [검증]
+        1. 컨텍스트 매니저의 __exit__가 정확히 한 번 호출됨
+        """
+        load_result = (np.zeros(10, dtype=np.float32), 16000)
+        with patch("worker.preprocessing.audioread.ffdec.FFmpegAudioFile") as mock_ffdec, \
+                patch("worker.preprocessing.librosa.load", return_value=load_result, side_effect=load_side_effect):
+            try:
+                load_audio("https://stream.example.com/audio")
+            except AudioDecodingError:
+                pass
+
+        mock_ffdec.return_value.__exit__.assert_called_once()
 
 
 @pytest.fixture(autouse=True)

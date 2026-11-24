@@ -126,7 +126,7 @@ async def _recover_processing(client: redis_asyncio.Redis) -> None:
 
 
 async def subscriber_loop() -> None:
-    client = redis_asyncio.from_url(REDIS_URL, decode_responses=True)
+    client = redis_asyncio.from_url(REDIS_URL, decode_responses=True, health_check_interval=30, socket_keepalive=True)
     logger.info(f"레디스 구독 시작(queue={WORKER_QUEUE_KEY})")
 
     try:

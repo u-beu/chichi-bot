@@ -350,6 +350,23 @@ class TestSubscriberLoop:
         mock_process.assert_called_once_with(fake_client, "payload")
 
     @pytest.mark.asyncio
+    async def test_creates_redis_client_with_keepalive_options(self):
+        """[목적] 블로킹 대기 중 끊어진 연결을 감지하도록 헬스체크/keepalive 옵션으로 Redis client를 생성하는지 검증
+
+        [검증]
+        1. redis_asyncio.from_url이 decode_responses=True, health_check_interval=30, socket_keepalive=True로 호출됨
+        """
+        fake_client = _make_client()
+        fake_client.blmove = AsyncMock(side_effect=asyncio.CancelledError())
+
+        with patch("worker.subscriber.redis_asyncio.from_url", return_value=fake_client) as mock_from_url:
+            with pytest.raises(asyncio.CancelledError):
+                await subscriber_loop()
+
+        _, kwargs = mock_from_url.call_args
+        assert kwargs == {"decode_responses": True, "health_check_interval": 30, "socket_keepalive": True}
+
+    @pytest.mark.asyncio
     async def test_idle_timeout_unloads_model_and_skips_processing(self):
         """[목적] blmove가 idle 타임아웃으로 None을 반환하면 분석 프로세스를 종료하고 처리를 건너뛰는지 검증
 
