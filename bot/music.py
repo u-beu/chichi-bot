@@ -35,6 +35,8 @@ FFMPEG_OPTIONS = {
 }
 
 guild_music_queues = {}
+guild_pause_tasks = {}
+PAUSE_TIMEOUT_SEC = 20 * 60
 
 class VideoTooLongError(Exception):
     def __init__(self, duration, max_duration):
@@ -125,7 +127,7 @@ async def handle_api_playback(bot: commands.Bot, discord_id: int, query: str) ->
     queue.insert(0, song)
 
     voice_client = discord.utils.get(bot.voice_clients, guild=guild)
-    if voice_client and voice_client.is_playing():
+    if voice_client and (voice_client.is_playing() or voice_client.is_paused()):
         voice_client.stop()
         return None
 
@@ -226,9 +228,30 @@ async def play_music(bot: commands.Bot, guild: discord.Guild, discord_id: int, c
     except Exception as e:
         logger.exception("예외 발생: %s", e)
 
+async def _require_voice(ctx) -> bool:
+    if not ctx.author.voice or not ctx.author.voice.channel:
+        await ctx.send("⛔ 음성 채널에서 호출해주세요.")
+        return False
+    return True
+
+
+async def _pause_timeout(ctx, guild_id: int, voice_client):
+    await asyncio.sleep(PAUSE_TIMEOUT_SEC)
+    guild_pause_tasks.pop(guild_id, None)
+    if voice_client.is_connected() and voice_client.is_paused():
+        guild_music_queues.pop(guild_id, None)
+        await voice_client.disconnect()
+        await ctx.send("⏹️ 일시정지가 너무 길어 재생을 종료합니다.")
+
+
 class MusicCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+
+    async def cog_check(self, ctx):
+        if ctx.guild is None:
+            raise commands.NoPrivateMessage()
+        return True
 
     @commands.command()
     async def play(self, ctx, *, arg=None):
@@ -260,7 +283,7 @@ class MusicCog(commands.Cog):
 
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
 
-        if voice_client and voice_client.is_playing():
+        if voice_client and (voice_client.is_playing() or voice_client.is_paused()):
             if is_add:
                 guild_music_queues.setdefault(ctx.guild.id, []).append(song)
                 await ctx.send(f"✅ 대기열 추가: **{song['title']}**")
@@ -277,33 +300,56 @@ class MusicCog(commands.Cog):
 
     @commands.command()
     async def skip(self, ctx):
+        if not await _require_voice(ctx):
+            return
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
-        if voice_client and voice_client.is_playing():
+        if voice_client and (voice_client.is_playing() or voice_client.is_paused()):
             await ctx.send("⏭️ 다음 곡을 재생합니다.")
             voice_client.stop()
 
     @commands.command()
     async def stop(self, ctx):
+        if not await _require_voice(ctx):
+            return
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+        guild_music_queues.pop(ctx.guild.id, None)
 
         if voice_client:
             await voice_client.disconnect()
             await ctx.send("🛑 노래 재생을 중지합니다.")
 
     @commands.command()
-    async def resume(self, ctx):
+    async def pause(self, ctx):
+        if not await _require_voice(ctx):
+            return
         voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
 
-        if voice_client and voice_client.is_playing():
-            await ctx.send("🎶 이미 노래를 재생 중입니다.")
+        if not (voice_client and voice_client.is_playing()):
+            await ctx.send("❌ 재생 중인 노래가 없습니다.")
             return
 
-        if not guild_music_queues.get(ctx.guild.id):
-            await ctx.send("❌ 빈 대기열입니다.")
+        voice_client.pause()
+        old_task = guild_pause_tasks.pop(ctx.guild.id, None)
+        if old_task:
+            old_task.cancel()
+        guild_pause_tasks[ctx.guild.id] = asyncio.create_task(_pause_timeout(ctx, ctx.guild.id, voice_client))
+        await ctx.send("⏸️ 일시정지합니다. 20분 안에 !resume 하지 않으면 재생을 종료합니다.")
+
+    @commands.command()
+    async def resume(self, ctx):
+        if not await _require_voice(ctx):
+            return
+        voice_client = discord.utils.get(self.bot.voice_clients, guild=ctx.guild)
+
+        if not (voice_client and voice_client.is_paused()):
+            await ctx.send("❌ 일시정지 상태가 아닙니다.")
             return
 
-        await ctx.send("✅ 다시 재생합니다.")
-        await play_music(ctx.bot, ctx.guild, ctx.author.id, ctx=ctx, is_refresh=True)
+        task = guild_pause_tasks.pop(ctx.guild.id, None)
+        if task:
+            task.cancel()
+        voice_client.resume()
+        await ctx.send("▶️ 다시 재생합니다.")
 
     @commands.command()
     async def queue(self, ctx):
@@ -324,6 +370,8 @@ class MusicCog(commands.Cog):
 
     @commands.command()
     async def clear(self, ctx):
+        if not await _require_voice(ctx):
+            return
         guild_music_queues.pop(ctx.guild.id, None)
         await ctx.send("▶️ 대기열 목록 초기화")
 
@@ -333,7 +381,8 @@ class MusicCog(commands.Cog):
         await ctx.send("🔵 **!play** <검색어/유튜브 링크> : 요청한 노래를 즉시 재생합니다.\n(재생 중이던 노래가 있을 경우 다시 대기열에 넣습니다.)\n\n" +
                        "🔵 **!play --add** <검색어/유튜브 링크> : 요청한 노래를 대기열 리스트에 추가합니다.\n(현재 재생 중인 노래를 유지합니다.)\n\n" +
                        "🟡 **!skip** : 대기열 리스트에서 다음 곡을 재생합니다.\n\n" +
-                       "🔴 **!stop** : 현재 재생중인 노래를 중단합니다.\n\n" +
-                       "🟢 **!resume** : 대기열 리스트를 기준으로 노래를 다시 재생합니다.\n\n" +
+                       "🔴 **!stop** : 재생을 종료하고 대기열을 비운 뒤 음성 채널에서 나갑니다.\n\n" +
+                       "⏸️ **!pause** : 현재 재생중인 노래를 일시정지합니다. (20분 후 자동 종료)\n\n" +
+                       "🟢 **!resume** : 일시정지한 노래를 이어서 재생합니다.\n\n" +
                        "🟣 **!queue** : 대기열 리스트를 확인합니다.\n\n" +
                        "🟣 **!clear** : 대기열 리스트를 초기화합니다.(리스트의 노래를 모두 삭제합니다.)\n\n")

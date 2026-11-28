@@ -83,8 +83,13 @@ class TestHandleApiPlayback:
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "voice_client_state, expect_play_called, expect_stop_called",
-        [("none", True, False), ("playing", False, True), ("idle", True, False)],
-        ids=["no_voice_client_starts_playback", "playing_interrupts_with_stop", "idle_voice_client_starts_playback"],
+        [("none", True, False), ("playing", False, True), ("paused", False, True), ("idle", True, False)],
+        ids=[
+            "no_voice_client_starts_playback",
+            "playing_interrupts_with_stop",
+            "paused_interrupts_with_stop",
+            "idle_voice_client_starts_playback",
+        ],
     )
     async def test_voice_client_state_controls_playback(
         self, mock_bot, voice_client_state, expect_play_called, expect_stop_called
@@ -93,8 +98,8 @@ class TestHandleApiPlayback:
 
         [검증]
         1. 어떤 경우든 조회한 song이 큐 맨 앞에 추가됨
-        2. voice_client가 없거나 재생 중이 아니면 play_music이 is_refresh=False로 호출됨
-        3. 재생 중이면 voice_client.stop만 호출되고 play_music은 호출되지 않음
+        2. voice_client가 없거나 재생/일시정지 중이 아니면 play_music이 is_refresh=False로 호출됨
+        3. 재생 중이거나 일시정지 중이면 voice_client.stop만 호출되고 play_music은 호출되지 않음
         """
         guild = _make_guild(1, [2])
         mock_bot.guilds = [guild]
@@ -103,6 +108,7 @@ class TestHandleApiPlayback:
         if voice_client_state != "none":
             voice_client = MagicMock()
             voice_client.is_playing.return_value = voice_client_state == "playing"
+            voice_client.is_paused.return_value = voice_client_state == "paused"
 
         with patch("bot.music.guild_music_queues", {}) as mock_queues, \
                 patch("bot.music.get_song_info", return_value={"title": "t", "video_id": "v"}), \

@@ -47,10 +47,11 @@ def member_in_voice_channel(make_permissions):
 
 @pytest.fixture
 def voice_client_factory():
-    """VoiceClient 목 객체 팩토리. is_playing/is_connected 등 상태를 제어."""
-    def _make(is_playing=False, is_connected=True, channel=None):
+    """VoiceClient 목 객체 팩토리. is_playing/is_paused/is_connected 등 상태를 제어."""
+    def _make(is_playing=False, is_connected=True, channel=None, is_paused=False):
         voice_client = MagicMock()
         voice_client.is_playing.return_value = is_playing
+        voice_client.is_paused.return_value = is_paused
         voice_client.is_connected.return_value = is_connected
         voice_client.channel = channel
         voice_client.disconnect = AsyncMock()
