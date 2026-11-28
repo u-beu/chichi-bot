@@ -77,3 +77,18 @@ class TestOnCommandError:
         await handler(ctx, RuntimeError("boom"))
 
         ctx.send.assert_called_once_with("⚠️ 오류가 발생했습니다.")
+
+    @pytest.mark.asyncio
+    async def test_no_private_message_sends_guild_only_message(self):
+        """[목적] NoPrivateMessage 에러 발생 시 서버 전용 안내 메시지를 전송하는지 검증
+
+        [검증]
+        1. "⛔ 서버에서만 사용할 수 있는 명령어입니다." 메시지가 전송됨
+        """
+        handler = _get_handler()
+        ctx = MagicMock()
+        ctx.send = AsyncMock()
+
+        await handler(ctx, commands.NoPrivateMessage())
+
+        ctx.send.assert_called_once_with("⛔ 서버에서만 사용할 수 있는 명령어입니다.")

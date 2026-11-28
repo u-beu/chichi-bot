@@ -12,6 +12,8 @@ def setup_error_handlers(bot):
     async def on_command_error(ctx, error):
         if isinstance(error, CommandNotFound):
             await ctx.send("❓ 명령어를 찾을 수 없습니다.")
+        elif isinstance(error, commands.NoPrivateMessage):
+            await ctx.send("⛔ 서버에서만 사용할 수 있는 명령어입니다.")
         elif isinstance(error, commands.CommandInvokeError):
             original = error.original
             if isinstance(original, VideoTooLongError):
